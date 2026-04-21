@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+
+# Supabase CLI local state
+.supabase/
+
+# Belt-and-suspenders: never let a keys-in-markdown file slip in (see §11.7).
+SUPABASE.md
