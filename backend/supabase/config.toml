@@ -202,8 +202,11 @@ web3 = 30
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
-# Spec §4.3: invite-only, no open signup path.
-enable_signup = false
+# NOTE: the outer `[auth] enable_signup = false` (above) is the spec §4.3
+# invite-only gate. Setting this inner flag to `false` in Supabase CLI 2.75
+# additionally disables existing email-based sign-in (error: email_provider_disabled),
+# which is NOT the spec intent. Leave `true` — new-signup blocking happens upstream.
+enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
@@ -266,9 +269,16 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+# Spec §4.2 — injects tenant_id and app_role claims from public.users.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
+# Spec §4.7 — per-account lockout; counts failed sign-ins in public.login_failure_counters
+# and returns HTTP 429 once the window tips the threshold.
+[auth.hook.password_verification_attempt]
+enabled = true
+uri = "pg-functions://postgres/public/password_verification_attempt_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
