@@ -1,6 +1,6 @@
 # TimeKeepingApp — Backend Specification
 
-**Status:** Draft v0.2.0 — design intent, not yet implemented. Adversarial review pass complete: all 6 high-severity issues resolved. Medium/low-severity items from adversarial analysis remain for a subsequent pass. See Revision Log at bottom.
+**Status:** Draft v0.3.0 — design intent, not yet implemented. Adversarial review complete (all 6 HSI resolved). Implementation-readiness additions in this revision: badge override parallel flow (§7.7), `open` state for field timesheets (§6.6, §7.4), partial-state UX for split staff timesheets (§6.6), tenants schema completion (§3), and new §11 Implementation stack & conventions. Companion: [backend-test-plan.md](backend-test-plan.md). See Revision Log at bottom.
 **Scope:** A multi-tenant backend to replace the current localStorage-only prototype. Adds authentication with full password lifecycle, role-based access control, subcontractor modeling, and a configurable multi-node approval workflow for submitted hours.
 
 This document specifies the **what** and the **data/API shape**. It is deliberately implementation-agnostic (no framework lock-in) but assumes an HTTP/JSON API backed by a relational store (Postgres-style) with bcrypt/argon2 password hashing and signed session tokens (JWT or opaque).
@@ -41,7 +41,7 @@ Tenants are provisioned by a **super-admin** out of band (seed script / ops runb
 
 | Table | Column | Notes |
 | --- | --- | --- |
-| `tenants` | `id`, `name`, `slug`, `status`, `created_at` | `slug` unique; `status` ∈ {`active`,`suspended`} |
+| `tenants` | `id`, `name`, `slug`, `status`, `created_at`, `timezone`, `locale`, `email_from_address`, `webhook_url` NULL, `webhook_signing_secret_ref` NULL, `session_absolute_hours`, `session_idle_minutes`, `stall_hours` | `slug` unique; `status` ∈ {`active`,`suspended`}. Defaults: `timezone='UTC'`, `locale='en-US'`, `session_absolute_hours=12`, `session_idle_minutes=30`, `stall_hours=48`. `webhook_signing_secret_ref` points at a secrets-manager key, not the raw secret. |
 
 ---
 
@@ -252,6 +252,10 @@ timesheets(
 
 **Staff-timesheet note:** the current frontend allows multiple projects per weekly timesheet. For backend sanity and to make approval routing unambiguous, the backend will split a weekly submission into **one `timesheets` row per `(employee, week, project)`** — each routes through its own silo. The frontend can still present one weekly grid; the submit handler is responsible for the split.
 
+**Field-timesheet `open` state:** field timesheets have an additional pre-submission state, `open`, not present on staff timesheets. An admin (or timekeeper with appropriate `submitter_assignments`) creates a field timesheet in `open` — pre-filled with project/area/task/day/crew but zero hours, no `submitter_user_id`. Any submitter with `submitter_assignments` on that silo can **claim** the timesheet into `draft` (setting `submitter_user_id` to themselves); once in `draft`, only the claimer may edit, until they submit or **release** it back to `open` for another submitter to pick up. State flow: `open → draft → submitted → …`. Staff timesheets skip `open` and start at `draft`.
+
+**Partial-state handling for split staff timesheets:** the `(employee, week, project)` split means one weekly submission becomes N independent `timesheets` rows and N independent `approval_runs`. Each routes through its own project's flow and reaches its own terminal state. The frontend renders the weekly grid with per-project status badges; if project A is approved and project B rejected, the submitter edits only B's rows — project A and pending-project C rows are locked read-only. Resubmit scope is the rejected project only: a new `approval_run` is opened for that single `timesheets` row, leaving approved rows untouched. Payroll downstream treats each `(employee, week, project)` row independently for period-end summation.
+
 ```
 timesheet_lines(
   id, timesheet_id, tenant_id,
@@ -264,9 +268,14 @@ timesheet_lines(
 
 badge_overrides(
   id, tenant_id,
+  timesheet_line_id NULL,        -- FK: which line triggered the mismatch; NULL if retroactive
   employee_id, date,
-  hours_st, hours_ot,
-  reason, overridden_by_user_id, ts
+  submitted_hours_st, submitted_hours_ot,
+  badge_hours_st, badge_hours_ot,
+  reason,                         -- free-text explanation, required at resolution
+  status,                         -- {open, resolved_submitted_canonical, resolved_badge_canonical}
+  resolved_by_user_id NULL, resolved_at NULL,
+  opened_at, opened_by_user_id
 )
 ```
 
@@ -395,9 +404,14 @@ Every user-visible approval event writes one `approval_actions` row. Admin reass
 **Timesheet status** (on `timesheets.status`):
 
 ```
-draft → submitted → in_review → approved
-                              ↘ rejected → (edit) → submitted (new cycle on same timesheet)
-                              ↘ recalled  → draft  (submitter withdrew before terminal)
+(field only)  open ⇄ draft → submitted → in_review → approved
+(staff only)         draft → submitted → in_review → approved
+                                                    ↘ rejected → (edit) → submitted (new cycle on same timesheet)
+                                                    ↘ recalled  → draft  (submitter withdrew before terminal)
+
+Field-only transitions involving `open`:
+    open → draft   (any silo submitter claims an admin-pre-created timesheet; sets submitter_user_id)
+    draft → open   (claimer releases; clears submitter_user_id; another silo submitter may re-claim)
 ```
 
 **Approval run status** (on `approval_runs.status`): `open | approved | rejected | recalled | abandoned`.
@@ -492,6 +506,36 @@ Every approval state transition fires notifications to a resolved recipient set.
   }
   ```
 - **Failure handling:** webhook retries 3× with exponential backoff; persistent failure writes to `notification_failures` and alerts tenant admins. Email failures log to `auth_events` but do not retry (rely on SMTP queue).
+
+### 7.7 Badge override reconciliation flow
+
+Badge overrides run through a **parallel, independent** approval flow — they do not gate the parent timesheet's approval run. Rationale: badge-system data quality is a separate concern from authorization of submitted hours. A timekeeper_admin's reconciliation of a missed badge-punch should not stall payroll for a crew whose hours are otherwise attested by their foreman.
+
+**Creation.** A `badge_overrides` row (§6.6) is created:
+
+1. **Automatically on submit:** when any `timesheet_line.hours_*` for a field timesheet disagrees with the employee's `badge_records` for that `(employee, date)` tuple. Strict comparison; zero tolerance in v1. One `badge_overrides` row per mismatched line.
+2. **Retroactively by a timekeeper or admin:** when a badge gap is noticed post-submission (e.g., the badge terminal was offline for 90 minutes that morning). The row may or may not reference an original line.
+
+**Flow.** Each `badge_overrides` row spawns its own single-node `approval_run` (same `approval_runs` table; `flow_id` points at the tenant's built-in override-reconciliation flow — a one-node flow whose approver is `role_on_silo:timekeeper_admin`). This uses the standard version-based concurrency contract (§7.4).
+
+**Resolution actions** (written to `approval_actions` with the run's `run_id`):
+
+- `resolved_submitted_canonical` — submitted hours stand; badge data discarded or annotated. No effect on the parent timesheet's approval run. `reason` required.
+- `resolved_badge_canonical` — badge data stands; submitted hours were wrong. Side effects depend on the parent run's current state:
+  - Parent still open → transition parent to `rejected` with reason `HOURS_RECONCILED_TO_BADGE`, pulling the submitter back into an edit loop (standard reject fanout per §7.4).
+  - Parent already approved → write an audit event `parent_approval_invalidated` on the parent run; notify tenant admins; admin resolves via `admin_override` on a replacement run or via a follow-on correction timesheet.
+
+**Independence from the parent run.** Possible terminal combinations:
+
+| Parent run | Override outcome | Result |
+| --- | --- | --- |
+| approved | `resolved_submitted_canonical` | Clean terminal. |
+| approved | `resolved_badge_canonical` | Parent retroactively invalidated; admin handles. |
+| rejected (any reason) | any | Submitter edits and resubmits; new run spawns fresh mismatch checks. |
+| still open at override-resolution time | `resolved_badge_canonical` | Parent → rejected with reconciliation reason. |
+| approved, override still open | — | Payroll export flags `pending_reconciliation=true` on the affected lines. |
+
+**Audit.** Override runs are addressable via the same `GET /approvals/:run_id` endpoint; the full audit trail per-timesheet spans both the authorization flow and any overlapping reconciliation flow(s).
 
 ---
 
@@ -665,6 +709,112 @@ At cutover the frontend switches from `DB.*` localStorage calls to a thin API cl
 
 ---
 
+## 11. Implementation stack & conventions
+
+Concrete technology choices and API conventions. Picks optimize for AI-assisted development leverage (mainstream frameworks with strong training coverage, AI-friendly declarative schema formats, opinionated conventions that guide generation).
+
+### 11.1 Stack
+
+| Concern | Choice | Notes |
+| --- | --- | --- |
+| Language | TypeScript (strict mode) | Used in the backend service and for any shared types with the frontend. |
+| Runtime | Node.js LTS (22.x) | |
+| HTTP framework | Fastify | TypeScript-first, plugin architecture, fast. |
+| ORM | Prisma | Declarative single-file `schema.prisma`; built-in migrations; strong TS integration. Free and OSS (Apache 2.0). |
+| Database | PostgreSQL 15+ | Needed for `NULLS NOT DISTINCT` in UNIQUE constraints. RLS used for tenant isolation. |
+| Migration tool | Prisma Migrate | Versioned forward/reverse migration scripts, integrated with the ORM. |
+| Job queue | BullMQ (Redis-backed) | Stall detection, webhook delivery with retry, email sending, invite release. |
+| Cache / queue backend | Redis | Backs BullMQ and stores Idempotency-Key responses (24h TTL). |
+| Password hashing | `argon2` (argon2id variant) | Per-user salt. |
+| Session tokens | Opaque, DB-backed in `sessions` | Enables revocation; avoids cross-tenant JWT key rotation complexity. |
+| Email delivery | Resend | Transactional email API. |
+| Testing framework | Vitest | TypeScript-first, Jest-compatible API. |
+| API integration tests | Supertest | Standard for Fastify/Express. |
+| Secrets | Env vars in dev; secrets manager (AWS Secrets Manager or equivalent) in prod | Never in `tenants` directly — `webhook_signing_secret_ref` points at a key. |
+
+### 11.2 API conventions
+
+**Versioning.** All endpoints under `/api/v1`. Breaking changes roll to `/api/v2`; `v1` remains available for a deprecation window (≥ 6 months).
+
+**Error responses** follow **RFC 7807 Problem Details**:
+
+```json
+{
+  "type": "https://api.invenio.example/errors/project-not-ready",
+  "title": "Project not ready for submission",
+  "status": 409,
+  "detail": "Project P123 is missing required configuration",
+  "instance": "/api/v1/timesheets/abc/submit",
+  "missing": ["project_flow_assignment", "silo_role_assignments:sub=S003:role=foreman"]
+}
+```
+
+- `type` — stable URL-shaped identifier per error code (doesn't need to resolve).
+- `title` — short human label.
+- `status` — matches HTTP status code.
+- `detail` — specific, human-readable message.
+- `instance` — the request path.
+- Error-specific extension fields (`missing`, `run_state`, `conflicting_version`, etc.) — free-form on the response body.
+
+Content type: `application/json; charset=utf-8`. Error responses use `application/problem+json`.
+
+**Pagination.** All collection endpoints support cursor-based pagination: `?limit=<int>&cursor=<opaque>` (default limit 50, max 200). Response: `{ data: [...], next_cursor: string | null }`.
+
+**Authentication header.** `Authorization: Bearer <opaque-token>`. Tokens are issued by `POST /auth/login` and resolved against the `sessions` table server-side.
+
+**Idempotency.** `Idempotency-Key` header is honored on POSTs to `/approve`, `/reject`, `/override`, and bulk import endpoints. Responses cached for 24h keyed on `(actor_user_id, key)` (§7.4, §8).
+
+### 11.3 Data types
+
+| Column kind | Type | Notes |
+| --- | --- | --- |
+| All IDs | `UUID` | No integer sequences exposed; no record-count leakage. |
+| Timestamps | `TIMESTAMPTZ` | Always timezone-aware. |
+| Hours | `NUMERIC(5,2)` | Max 999.99 — more than a week. |
+| Money (v2) | `NUMERIC(10,2)` | |
+| Stable enums | Postgres `CREATE TYPE … AS ENUM (...)` | `users.role`, `timesheets.kind`, `timesheets.status`, `approval_runs.status`, etc. |
+| Evolving labels | `TEXT` + optional CHECK | `role_label` — free-form with reserved values (see §7.1). |
+| Free-form strings | `TEXT` | No arbitrary length limits except at UX boundaries. |
+| JSON payloads | `JSONB` | `auth_events.details`, `notification_failures.payload`, etc. |
+
+### 11.4 Index strategy
+
+Required indexes on every tenant-scoped table:
+
+- Composite `(tenant_id, …)` on primary query paths — matches the RLS filter pattern.
+- All foreign keys (Prisma creates these automatically; verify).
+
+Table-specific required indexes:
+
+| Table | Index | Purpose |
+| --- | --- | --- |
+| `users` | `UNIQUE (tenant_id, username) WHERE status != 'revoked'` | Allow username reuse after revoke (addresses M-13). |
+| `users` | `UNIQUE (tenant_id, email) WHERE status != 'revoked'` | Same for email. |
+| `timesheets` | `(tenant_id, employee_id, period_start, period_end)` | "My timesheets" queries. |
+| `timesheets` | `(tenant_id, project_id, status)` | Admin listings, project dashboards. |
+| `approval_runs` | `(tenant_id, current_node_id, status)` | `GET /approvals/mine`. |
+| `approval_runs` | `(tenant_id, timesheet_id)` | Run-attach lookup. |
+| `approval_actions` | `(run_id, ts)` | Run history timeline. |
+| `auth_events` | `(tenant_id, user_id, ts DESC)` | Audit queries. |
+| `auth_events` | `(ip, ts DESC)` | Rate-limit lookups on failed login. |
+| `sessions` | `(user_id, revoked_at)` | Active session lookup. |
+| `project_flow_assignments` | `(tenant_id, project_id, effective_from DESC, effective_to)` | Active-flow resolution at submit. |
+| `silo_role_assignments` | `(tenant_id, project_id, subcontractor_id, role_label, effective_from DESC)` | Approver resolution. |
+| `project_role_assignments` | `(tenant_id, project_id, role_label, effective_from DESC)` | Approver resolution. |
+| `badge_overrides` | `(tenant_id, status)` | Open-overrides dashboard. |
+
+Unique constraints with NULL-able columns use `NULLS NOT DISTINCT` (Postgres 15+) or per-branch partial indexes — see §7.1 note on `approval_node_approvers`.
+
+### 11.5 Testing conventions
+
+- Every PR ships tests for the code it adds or changes.
+- Integration tests hit a real Postgres via Testcontainers (or a dedicated test DB) — no ORM/DB mocks; per the authoritative-source principle, we don't want mocks passing while production integrations fail.
+- Concurrency tests simulate racing actors with `Promise.all` of concurrent requests; assert both winner effect and loser 409.
+- Multi-tenant isolation tests cover every write endpoint: caller in tenant A cannot observe/modify tenant B's data; responses are 404 (not 403) to avoid existence leaks.
+- See `docs/backend-test-plan.md` for the full test-plan checklist, organized by subsystem with P0/P1/P2 priorities.
+
+---
+
 ## Appendix A: state machine diagram
 
 ```
@@ -735,7 +885,26 @@ Concrete edits applied:
 - §7.4 routing algorithm — step 3 resolves project flow; error code `SILO_UNCONFIGURED` → `FLOW_UNCONFIGURED`.
 - Appendix B permission matrix — approver column converted to an overlay capability.
 
-All 6 high-severity adversarial-review issues resolved. Medium- and low-severity items from [adversarial-analysis-backend-spec.md](adversarial-analysis-backend-spec.md) remain open and can be addressed in a subsequent pass.
+All 6 high-severity adversarial-review issues resolved. Four medium-severity items addressed in v0.3.0 (below); remaining medium/low items from [adversarial-analysis-backend-spec.md](adversarial-analysis-backend-spec.md) deferred to a subsequent pass.
+
+### v0.3.0 — 2026-04-21 (Implementation readiness)
+
+Moves the spec from "design intent" to "ready to build." Four medium-severity items from the adversarial analysis addressed; stack and conventions picked.
+
+Addressed:
+
+- **M-9 `badge_overrides` orphan** — §6.6 schema expanded (submitted vs. badge hours, status, resolution metadata). New §7.7 specifies the **parallel, independent** reconciliation flow (single-node, `role_on_silo:timekeeper_admin` approver). Resolution can retroactively invalidate an approved parent run via the `resolved_badge_canonical` outcome; parallel independence preserves payroll flow for data-quality-only issues (e.g., dropped badge events).
+- **M-10 field-timesheet `open` state** — §6.6 documents the `open → draft → submitted → …` flow for field timesheets; claim / release semantics specified. §7.4 state machine diagram updated.
+- **M-8 staff-timesheet partial state** — §6.6 adds an explicit partial-state handling paragraph: per-project status badges, edit-scope limited to rejected rows, independent resubmit, payroll-downstream row independence.
+- **M-11 tenants schema incomplete** — §3 tenants table expanded with `timezone`, `locale`, `email_from_address`, `webhook_url`, `webhook_signing_secret_ref`, `session_absolute_hours`, `session_idle_minutes`, `stall_hours`.
+
+Stack & conventions:
+
+- New **§11 Implementation stack & conventions** — TypeScript + Fastify + Prisma + PostgreSQL 15+ + BullMQ/Redis + Resend + argon2 + Vitest + Supertest. RFC 7807 error format, cursor-based pagination, `UUID`/`TIMESTAMPTZ`/`NUMERIC` type rules, required-index inventory.
+
+Companion document:
+
+- **[backend-test-plan.md](backend-test-plan.md)** — structured test-plan checklist organized by subsystem (auth, tenancy, approval, timesheets, badge override, notifications, migration, export, integration scenarios, non-functional). P0/P1/P2 priority flags.
 
 ### v0.2.0 — 2026-04-21 (HSI-#5 resolved; adversarial review complete)
 
