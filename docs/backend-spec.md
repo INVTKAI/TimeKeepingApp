@@ -1,6 +1,6 @@
 # TimeKeepingApp — Backend Specification
 
-**Status:** Draft v0.1.2 — design intent, not yet implemented. Adversarial review pass in progress: HSI-#1 and #2 resolved; HSI-#3, #4, #5, #6 still pending. See Revision Log at bottom.
+**Status:** Draft v0.2.0 — design intent, not yet implemented. Adversarial review pass complete: all 6 high-severity issues resolved. Medium/low-severity items from adversarial analysis remain for a subsequent pass. See Revision Log at bottom.
 **Scope:** A multi-tenant backend to replace the current localStorage-only prototype. Adds authentication with full password lifecycle, role-based access control, subcontractor modeling, and a configurable multi-node approval workflow for submitted hours.
 
 This document specifies the **what** and the **data/API shape**. It is deliberately implementation-agnostic (no framework lock-in) but assumes an HTTP/JSON API backed by a relational store (Postgres-style) with bcrypt/argon2 password hashing and signed session tokens (JWT or opaque).
@@ -330,7 +330,7 @@ Role labels are free-form strings, but the following are **reserved** and carry 
 
 | Reserved label | Scope | Meaning |
 | --- | --- | --- |
-| `foreman` | silo | Crew lead for the silo. Typically also a submitter. Notified on submit, reject, and stall. |
+| `foreman` | silo | Node-1 approver for the silo. Always a user — foremen submit their own hours for payroll, so they necessarily have accounts. Multiple foremen per silo are supported (the `silo_role_assignments` UNIQUE constraint permits multiple rows per silo+label). Notified on submit, reject, and stall. |
 | `timekeeper_admin` | silo | Oversight user accountable for clean intake on this silo. Notified on submit, reject, stall, and reassign. |
 | `pm` | project | Project manager. No implicit notifications beyond being on a node's approver pool. |
 | `super` | silo | Project superintendent — per-sub in practice. |
@@ -351,7 +351,13 @@ project_flow_assignments(
 
 At submit time the backend resolves the active assignment for `(project_id, submitted_at)`. Flow templates are **project-scoped** — all subs submitting on a project share the same template; resolved approvers vary per silo at nodes that use `role_on_silo` references (§7.1).
 
-If no assignment exists, submission is blocked with error code `FLOW_UNCONFIGURED`. The strict-vs-grace tradeoff around this blocking behavior is **HSI-#4 (still open)**.
+If no assignment exists (or any required role resolution is empty at submit time), submission is blocked with error code `PROJECT_NOT_READY`. The backend is **strict by design**: every project must be fully configured (flow + `silo_role_assignments` for each active silo's reserved labels + `project_role_assignments` for reserved project labels) before submissions are accepted against it. No tenant-level default flow; no draft-as-grace mode.
+
+Two UX tweaks make the strict stance workable:
+
+1. **Structured error body.** The 409 response includes a `missing` array enumerating the specific preconditions not yet met (e.g., `["project_flow_assignment", "silo_role_assignments:sub=S003:role=foreman", "project_role_assignments:role=pm"]`) so the submitter sees a meaningful "not set up yet" message rather than a bare error code.
+
+2. **Admin UI gate.** Every project exposes a derived `is_ready_for_submission` flag — true only when flow, silo roles, and project roles are all in place. Until true, the project does not appear in submitter dropdowns (`GET /projects/:id/readiness` in §8 returns the detail for the admin UI).
 
 The silo concept (`(project, subcontractor)` pair — see §6.4) remains relevant for per-sub role resolution via `silo_role_assignments`; it does not participate in flow selection. Multiple concurrent silos per project (one per sub) is still the norm.
 
@@ -362,6 +368,7 @@ approval_runs(
   id, tenant_id, timesheet_id, flow_id,
   status,                -- see §7.4
   current_node_id NULL,  -- NULL when terminal
+  version INT NOT NULL DEFAULT 0,   -- optimistic concurrency; bumped on every state transition (see §7.4 "Concurrency")
   opened_at, closed_at NULL
 )
 
@@ -395,13 +402,23 @@ draft → submitted → in_review → approved
 
 **Approval run status** (on `approval_runs.status`): `open | approved | rejected | recalled | abandoned`.
 
+**Concurrency (optimistic):** every state transition on `approval_runs` — advance on approve, terminate on reject/recall, reassignment, admin override — is performed as a conditional UPDATE keyed on the current `version`:
+
+```sql
+UPDATE approval_runs
+SET status = ..., current_node_id = ..., version = version + 1
+WHERE id = :run_id AND version = :current_version
+```
+
+If 0 rows are affected, another actor already changed the run — the transaction rolls back and the API returns 409 with error code `RUN_STATE_CHANGED` and the latest run state in the body. The `approval_actions` insert and any dependent `timesheets.status` update happen in the **same transaction** as the run UPDATE, so the audit log never contains an action for a transition that didn't happen. Clients don't pass the version — the server reads it atomically at the start of the transaction. Retried requests (e.g., network blips) should include an `Idempotency-Key` header (§8) so duplicates return the cached first-request response rather than racing as a new actor.
+
 **Routing algorithm (on submit):**
 
 ```
 1. Validate the submitter is authorized for (project, sub) per §5.
 2. Compute subcontractor_id from the employee's current sub.
-3. Resolve the active project_flow_assignment for (project_id, today).
-   If none → 409 with error code FLOW_UNCONFIGURED.  (See HSI-#4 — still open.)
+3. Resolve the active project_flow_assignment for (project_id, today) plus the role assignments for every `role_on_silo` / `role_on_project` reference in the flow's nodes (silo-scoped references resolved against this submission's silo).
+   If any required configuration is missing → 409 with error code `PROJECT_NOT_READY` and a `missing` array enumerating specifics (see §7.2).
 4. Create approval_run with current_node_id = node ordinal 1.
 5. Notify eligible approvers (§7.6).
 ```
@@ -511,13 +528,14 @@ PATCH  /subcontractors/:id         (admin)
 GET    /projects
 POST   /projects                   (admin)
 PATCH  /projects/:id               (admin)
+GET    /projects/:id/readiness     → { ready: bool, missing: [...] }   -- drives the submit-UI gate
 
 GET    /projects/:id/subcontractors
 POST   /projects/:id/subcontractors       { subcontractor_id, start_date }  (admin)
 PATCH  /project-subcontractors/:id        { end_date }                      (admin)
 ```
 
-### Approval flows & silo flow assignments (admin only)
+### Approval flows & role/flow assignments (admin only)
 ```
 GET    /approval-flows
 POST   /approval-flows             { name, nodes: [{ordinal, name, approvers: [...]}, ...] }
@@ -525,13 +543,17 @@ PATCH  /approval-flows/:id
 POST   /approval-flows/:id/activate
 POST   /approval-flows/:id/deactivate    -- existing open runs keep old flow
 
-GET    /silo-assignments           ?project_id=&subcontractor_id=
-POST   /silo-assignments           { project_id, subcontractor_id, flow_id, effective_from }
-PATCH  /silo-assignments/:id       { effective_to }
+GET    /project-flow-assignments   ?project_id=
+POST   /project-flow-assignments   { project_id, flow_id, effective_from }
+PATCH  /project-flow-assignments/:id  { effective_to }
 
 GET    /silo-role-assignments      ?project_id=&subcontractor_id=
 POST   /silo-role-assignments      { project_id, subcontractor_id, role_label, user_id, effective_from }
 PATCH  /silo-role-assignments/:id  { effective_to }
+
+GET    /project-role-assignments   ?project_id=
+POST   /project-role-assignments   { project_id, role_label, user_id, effective_from }
+PATCH  /project-role-assignments/:id  { effective_to }
 ```
 
 ### Timesheets (submitter + approver + admin)
@@ -544,14 +566,16 @@ POST   /timesheets/:id/recall      → only while open, by submitter
 GET    /timesheets/:id/run         → approval run details + history
 ```
 
-### Approvals (approver + admin)
+### Approvals (any user with approval capability; reassign/override admin-only)
 ```
 GET    /approvals/mine             ?status=pending|acted   -- runs where caller is currently eligible
-POST   /approvals/:run_id/approve  { comment? }
-POST   /approvals/:run_id/reject   { comment }             -- comment required
+POST   /approvals/:run_id/approve  { comment? }            -- supports Idempotency-Key header
+POST   /approvals/:run_id/reject   { comment }             -- comment required; supports Idempotency-Key
 POST   /approvals/:run_id/reassign { to_user_id, reason }  (admin)
-POST   /approvals/:run_id/override { decision, comment }   (admin)
+POST   /approvals/:run_id/override { decision, comment }   (admin; supports Idempotency-Key)
 ```
+
+**Idempotency-Key header** — clients may include `Idempotency-Key: <uuid>` on POSTs to `/approve`, `/reject`, and `/override`. Server stores `(actor_user_id, key) → response` for 24h; a retried POST with the same key returns the cached response without re-executing. Keyed on `actor_user_id` so two different users sending the same key don't collide. See §7.4 "Concurrency" for the interaction with optimistic concurrency — different actors with different keys race normally through the version check; same-actor retries are absorbed by idempotency.
 
 ### Export (admin, with v2 cost enrichment)
 ```
@@ -580,11 +604,17 @@ Mechanical, one-time ingestion of data that already exists in the customer's loc
    - `projects`, `areas`, `task_codes`, `cwps`, `fcos`;
    - Historical `staff_timesheets` and `field_timesheets` as `draft` status (no approval runs — see "Historical timesheet handling" below).
 3. **User records** imported with `password_hash=NULL`, `status=pending`. No plaintext passwords cross the boundary. Invites are created but **not sent** until go-live.
-4. **Preliminary role remapping** (full resolution pending HSI-#5): `role='admin'` → `admin`; `role='staff'` → `submitter` with `employee_id` populated; `role='timekeeper'` → `submitter` (proxy assignments populated in Phase B).
+4. **Role remapping.** Legacy `{admin, staff, timekeeper}` roles map to the new `{admin, submitter}` model as follows:
+   - `role='admin'` → `admin`.
+   - `role='staff'` → `submitter` with `employee_id` populated (from the current app's `empId`).
+   - `role='timekeeper'` → `submitter`; `submitter_assignments` populated in Phase B.
+   - No legacy user maps to the old `approver` role — that role no longer exists. Approval capability is overlaid via Phase B spreadsheets (see §5 "Approval capabilities" and Phase B items 6–7).
 
 ### Phase B — Domain configuration (Invenio-led, spreadsheet-mediated)
 
 Net-new data collected via customer-filled spreadsheets. Invenio validates each and loads via admin API or direct DB population. All items required before go-live.
+
+Phase B is also where **approval capability** is assigned to existing users: the legacy `role` column (`staff`/`timekeeper`) doesn't carry enough information to identify who approves what. For example, a current `staff` user may turn out to be a project's PM — discovered during Phase B, recorded in `project-roles.xlsx` as a `pm` row, loaded into `project_role_assignments`. Existing users are referenced in the role-assignment spreadsheets by `external_id` or username.
 
 | # | Data | Spreadsheet template | Target table |
 | --- | --- | --- | --- |
@@ -613,7 +643,8 @@ Cutover is allowed only when every active tenant entity clears these checks:
 - Every active silo (`project_subcontractors` with no `end_date`) has `foreman` and `timekeeper_admin` populated in `silo_role_assignments`.
 - Every active project has `pm` and `prime_rep` populated in `project_role_assignments` (`accounting` optional per customer policy).
 - Every flow template's nodes resolve to at least one eligible user at run time.
-- Every legacy user has a corresponding new-system user with `status=pending` and a queued invite.
+- Every legacy user from the source `tk_users` blob is either (a) present in the new tenant with appropriate role and `employee_id` per the Phase A item 4 mapping, or (b) explicitly marked as archived by Invenio and documented in the migration notes log. No legacy user is silently dropped.
+- Every imported user has `status=pending` and a queued invite.
 
 On cutover: invites are released, users authenticate via the invite flow (§4.3), and the legacy app goes read-only.
 
@@ -704,12 +735,47 @@ Concrete edits applied:
 - §7.4 routing algorithm — step 3 resolves project flow; error code `SILO_UNCONFIGURED` → `FLOW_UNCONFIGURED`.
 - Appendix B permission matrix — approver column converted to an overlay capability.
 
-Still pending:
+All 6 high-severity adversarial-review issues resolved. Medium- and low-severity items from [adversarial-analysis-backend-spec.md](adversarial-analysis-backend-spec.md) remain open and can be addressed in a subsequent pass.
 
-- **HSI-#3** — concurrency control on any-of node advance (optimistic vs pessimistic).
-- **HSI-#4** — `FLOW_UNCONFIGURED` blocking behavior (keep strict, or add grace mode).
-- **HSI-#5** — role remapping for existing `{admin, staff, timekeeper}` users. Partially addressed by the capability demotion and §9 preliminary remapping; full resolution still pending (e.g., which existing users additionally need approval-capability assignments seeded in Phase B).
-- **HSI-#6** — foreman-as-approver fallback when the foreman has no user account.
+### v0.2.0 — 2026-04-21 (HSI-#5 resolved; adversarial review complete)
+
+HSI-#5 was largely resolved by HSI-#2's approver-as-capability demotion and §9's preliminary role-remapping rules. This revision finalizes the wording and tightens the go-live gate, closing the adversarial review milestone.
+
+Concrete edits applied:
+
+- §9 Phase A item 4 — role remapping rule finalized (dropped "preliminary / pending" language). Explicit note that no legacy user maps to the old `approver` role; approval capability is assigned in Phase B.
+- §9 Phase B intro — clarified that approval-capability assignment for existing users is discovered in Phase B (legacy `role` column alone is insufficient to identify approvers).
+- §9 Go-live gate — added an explicit legacy-user audit check: no legacy user is silently dropped; each either is imported (per the Phase A mapping) or explicitly archived and documented.
+
+### v0.1.5 — 2026-04-21 (HSI-#4 resolved)
+
+Adopted **strict blocking with UX tweaks**: no tenant default flow, no grace mode. Given the Invenio-led operational model (HSI-#1), strict is workable; the pain point is localized to post-cutover project onboarding, which Invenio controls. The combined error code is now `PROJECT_NOT_READY` (subsuming the earlier `FLOW_UNCONFIGURED`) and covers missing flow assignment, missing silo roles, or missing project roles.
+
+Concrete edits applied:
+
+- §7.2 — strict-by-design language; structured error body + admin UI readiness gate as UX tweaks.
+- §7.4 — routing step 3 expanded to check flow + all referenced silo/project role assignments; unified error code `PROJECT_NOT_READY` with `missing` array enumerating specifics.
+- §8 — added `GET /projects/:id/readiness → { ready, missing }`. Renamed stale `/silo-assignments` endpoints to `/project-flow-assignments`. Added `/project-role-assignments` CRUD endpoints (missing since HSI-#2 schema changes). Section heading updated from "silo flow assignments" to "role/flow assignments".
+
+### v0.1.4 — 2026-04-21 (HSI-#3 resolved)
+
+Adopted **optimistic concurrency** for approval state transitions. Approval races are rare in practice and the 409 UX is clean; pessimistic row locks would introduce needless serialization.
+
+Concrete edits applied:
+
+- §7.3 — `approval_runs` gained `version INT NOT NULL DEFAULT 0` column.
+- §7.4 — new "Concurrency (optimistic)" subsection specifies the conditional-UPDATE pattern, same-transaction action insertion, and `RUN_STATE_CHANGED` 409 response. Applies uniformly to approve, reject, recall, reassign, and admin_override transitions.
+- §8 — Idempotency-Key header support added to `/approvals/:run_id/approve`, `/reject`, and `/override`. Keyed on `(actor_user_id, key)` with 24h TTL; absorbs client-retry duplicates without conflicting with the optimistic-concurrency version check.
+- §8 — Approvals endpoint heading updated ("approver + admin" was stale post-HSI-#2) to reflect the capability model.
+
+### v0.1.3 — 2026-04-21 (HSI-#6 resolved)
+
+Customer confirmed: **every foreman will have a user account** because they are required to submit their own hours for payroll. This removes the "foreman without login" edge case entirely — no fallback notification path needed, no separate crew-metadata field required.
+
+Concrete edits applied:
+
+- §7.1 reserved-labels table — `foreman` description updated to state that the role is always held by a user (foremen necessarily have accounts to get paid). Multi-foreman-per-silo support noted (already permitted by the existing UNIQUE constraint on `silo_role_assignments`).
+- No schema changes required — `silo_role_assignments.user_id` is already a FK to `users`; the existing go-live gate (every active silo has `foreman` and `timekeeper_admin` populated) enforces this automatically.
 
 ### v0.1.2 — 2026-04-21 (HSI-#1 resolved)
 
