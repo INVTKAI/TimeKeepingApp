@@ -11,9 +11,9 @@ Supabase backend implementing [`../docs/backend-spec.md`](../docs/backend-spec.m
 | 3. Approval subsystem — schema + state-machine RPCs + overrides + badge cascade | ✅ Batches 4a / 4b / 4c / 4d |
 | 4. Notifications — outbox + delivery state + drain Edge Function + stall detection | ✅ Batches 5a / 5b / 5c |
 | 5. Migration tooling — `import-localstorage`, `import-spreadsheet`, `release-queued-invites` | ✅ Batch 6 |
-| 6. Export — `export-labor` Edge Function (CSV/XLSX) | ⏳ Batch 7 |
+| 6. Export — `export-labor` Edge Function (CSV/XLSX) | ✅ Batch 7 |
 
-Test suite: **241 pgTAP assertions** across 13 files; CI lint gate in place. Frontend rebuild against the v0.4 API surface lives at [`../frontend/`](../frontend/).
+All backend slices landed. Test suite: **241 pgTAP assertions** across 13 files; CI lint gate in place. Frontend rebuild against the v0.4 API surface lives at [`../frontend/`](../frontend/) and now covers auth + approve/reject/reassign mutations.
 
 ## Start here (fresh session)
 
@@ -106,6 +106,7 @@ backend/
     │   ├── import-localstorage/        # §9 Phase A — legacy blob → tenant
     │   ├── import-spreadsheet/         # §9 Phase B — dispatch on file_type
     │   ├── release-queued-invites/     # §9 cutover — generate invite links
+    │   ├── export-labor/               # §8 CSV / XLSX labor export
     │   └── drain-notifications/       # system-triggered; not withAdminContext
     └── tests/          # pgTAP; numbered for execution order
 ```
