@@ -6,6 +6,8 @@ import { SignIn } from "@/routes/SignIn";
 import { AcceptInvite } from "@/routes/AcceptInvite";
 import { ResetPassword } from "@/routes/ResetPassword";
 import { Dashboard } from "@/routes/Dashboard";
+import { Exports } from "@/routes/Exports";
+import { Users } from "@/routes/Users";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +32,22 @@ export function App() {
               element={
                 <RequireAuth>
                   <Dashboard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/exports"
+              element={
+                <RequireAuth role="admin">
+                  <Exports />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <RequireAuth role="admin">
+                  <Users />
                 </RequireAuth>
               }
             />

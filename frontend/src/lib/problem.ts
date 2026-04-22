@@ -90,3 +90,58 @@ export async function invokeEdgeFunction<T>(
   }
   return payload as T;
 }
+
+// Invoke an Edge Function that returns a binary/text file — streams the body
+// into a Blob and triggers a browser download via a hidden <a download>. On
+// non-2xx the server returns RFC 7807 JSON, which we parse and throw as a
+// Problem (same contract as invokeEdgeFunction).
+export async function downloadEdgeFunction(
+  supabaseUrl: string,
+  functionName: string,
+  body: unknown,
+  accessToken: string,
+  anonKey: string,
+): Promise<{ filename: string; rows: number | null }> {
+  const res = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${accessToken}`,
+      apikey: anonKey,
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (isProblem(parsed)) throw parsed;
+    } catch (e) {
+      if (isProblem(e)) throw e;
+    }
+    throw {
+      type: "https://api.invenio.example/errors/unknown",
+      title: `Edge function ${functionName} failed`,
+      status: res.status,
+      detail: text,
+    } satisfies Problem;
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+  const filename = filenameMatch?.[1] ?? `${functionName}.bin`;
+  const rowsHeader = res.headers.get("x-invenio-rows");
+  const rows = rowsHeader ? Number(rowsHeader) : null;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  return { filename, rows };
+}

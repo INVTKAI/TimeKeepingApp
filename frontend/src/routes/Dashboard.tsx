@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
@@ -127,9 +128,21 @@ export function Dashboard() {
               {claims.tenantId?.slice(0, 8) ?? "—"}
             </p>
           </div>
-          <button onClick={signOut} className="invenio-btn-secondary">
-            Sign out
-          </button>
+          <div className="flex gap-2">
+            {claims.appRole === "admin" && (
+              <>
+                <Link to="/users" className="invenio-btn-secondary">
+                  Users
+                </Link>
+                <Link to="/exports" className="invenio-btn-secondary">
+                  Export
+                </Link>
+              </>
+            )}
+            <button onClick={signOut} className="invenio-btn-secondary">
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
