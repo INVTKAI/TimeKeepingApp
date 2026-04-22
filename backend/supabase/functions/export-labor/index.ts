@@ -190,16 +190,31 @@ function csvEscape(v: unknown): string {
   return s;
 }
 
+// Column order is fixed — don't derive from Object.keys because row
+// construction spreads `base` fields first and appends Type/Hours, which would
+// put Comment between FCO/PCR and Type in the CSV.
+const CSV_HEADERS: (keyof ExportRow)[] = [
+  "Source",
+  "Employee",
+  "Emp ID",
+  "Craft",
+  "Date",
+  "Day",
+  "Project #",
+  "Project Name",
+  "Area",
+  "Task Code",
+  "CWP",
+  "FCO/PCR",
+  "Type",
+  "Hours",
+  "Comment",
+];
+
 function rowsToCsv(rows: ExportRow[]): string {
-  if (rows.length === 0) {
-    return (
-      "Source,Employee,Emp ID,Craft,Date,Day,Project #,Project Name,Area,Task Code,CWP,FCO/PCR,Type,Hours,Comment\n"
-    );
-  }
-  const headers = Object.keys(rows[0]) as (keyof ExportRow)[];
-  const lines = [headers.join(",")];
+  const lines = [CSV_HEADERS.join(",")];
   for (const r of rows) {
-    lines.push(headers.map((h) => csvEscape(r[h])).join(","));
+    lines.push(CSV_HEADERS.map((h) => csvEscape(r[h])).join(","));
   }
   return lines.join("\n") + "\n";
 }
