@@ -4,6 +4,8 @@ Living doc. Update status + dates as items land. Source of truth for "are we rea
 
 **Prod Supabase project:** `TimeKeepingApp` · ref `rrgocxusfaxzwgnjxpdh` · East US (N. Virginia) · Pro tier · region matches customer's US location.
 
+**Email domain:** `inveniotech.org` (DNS access confirmed user-side 2026-04-22). Supabase Auth emails from `noreply@inveniotech.org`; tenant notification default from-address same until per-tenant override.
+
 Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 ---
@@ -16,14 +18,14 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | --- | ------------------------------------------------------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
 | 1   | Pro-tier Supabase project provisioned                         | ✅     | Invenio | Confirmed 2026-04-22                                                                                  |
 | 2a  | Migrations pushed (14 files, 2026-04-22)                      | ✅     | Claude  | Applied 2026-04-22 via `supabase db push`. `migration list --linked` confirms Local=Remote for all 14. Smoke: PostgREST live (anon SELECT tenants → 200 []); submit_timesheet RPC reachable and returns P0005 TENANT_CLAIM_MISSING on unauthenticated call (confirms assert helpers work) |
-| 2b  | Auth hooks wired (custom_access_token + password_verification) | ⏳     | Claude  | `config.toml` wires these locally; prod requires enabling in Dashboard → Auth → Hooks                 |
-| 2c  | pg_cron extension enabled + `pg_net` extension enabled        | ⏳     | Claude  | Dashboard → Database → Extensions                                                                     |
-| 2d  | pg_cron schedules: `drain-notifications`, `reconcile-stuck-sending`, `emit-stall-notifications` | ⏳ | Claude | SQL in `backend/README.md` "Production deployment notes" |
-| 2e  | `NOTIFICATION_DRAIN_SECRET` set in prod Edge Function env     | ⏳     | Claude  | Rotate the local-dev value; store in Vault or Edge Function secrets                                   |
-| 3a  | Custom SMTP configured (Resend)                               | ⏳     | Invenio | Needs `RESEND_API_KEY` as a platform secret; Dashboard → Auth → SMTP                                  |
-| 3b  | DNS records for `invenio-tek.com` email (SPF / DKIM / DMARC)  | ⏳     | Invenio | Resend provides the records to add                                                                    |
-| 3c  | `RESEND_API_KEY` set in `drain-notifications` Edge Function env | ⏳   | Claude  | For domain-notification emails (separate from Supabase Auth SMTP)                                     |
-| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ⏳ | Invenio | Dashboard → Auth → Email templates; at minimum customize subject + copy             |
+| 2b  | Auth hooks wired (custom_access_token + password_verification) | ⏳     | Invenio | Dashboard → Authentication → Hooks. Without `custom_access_token`, every RPC returns P0005 TENANT_CLAIM_MISSING |
+| 2c  | pg_cron + pg_net extensions enabled                            | 🟡     | Invenio | Apply `backend/scripts/prod-bootstrap.sql` in Dashboard → SQL Editor (needs secret replacement first) |
+| 2d  | pg_cron schedules registered                                   | 🟡     | Invenio | Same `prod-bootstrap.sql` registers all three. Idempotent on re-run                                   |
+| 2e  | `NOTIFICATION_DRAIN_SECRET` set in prod EF env                 | ✅     | Claude  | Set 2026-04-22 via `supabase secrets set` (48-char random). Smoke: drain returns 403 on wrong secret + 200 + claimed:0 on correct |
+| 3a  | Custom SMTP configured (Resend)                                | ⏳     | Invenio | Dashboard → Authentication → SMTP. Use the RESEND_API_KEY already in backend/.env                     |
+| 3b  | DNS records for `inveniotech.org` email (SPF / DKIM / DMARC)  | ⏳     | Invenio | Resend provides the records to add. User has DNS access confirmed                                     |
+| 3c  | `RESEND_API_KEY` set in prod EF env                            | ✅     | Claude  | Set 2026-04-22 alongside drain secret. drain-notifications will deliver real email from next cron tick after DNS + SMTP land |
+| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ⏳ | Invenio | Dashboard → Authentication → Email templates; at minimum customize subject + copy for `inveniotech.org` |
 
 ### Customer-side data
 
@@ -81,11 +83,12 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 ## Execution order
 
-1. Push migrations to prod (#2a) — unblocks everything downstream
-2. Enable extensions + wire Auth hooks (#2b, #2c)
-3. Build #9 + #10 (missing admin UIs) while #3, #4 are Invenio-gated
-4. Register pg_cron schedules (#2d) — requires #3 be ready for the drain to actually deliver email
-5. #11 + #13 + #16 + #17 (runbooks + tests) — runnable against the local stack
-6. #12 (Playwright) once any stable UI is live
-7. Customer data (#5 #6 #7) — the actual go-live sequence
-8. #8 go-live gate — run immediately before cutover
+1. ✅ Push migrations to prod (#2a) — applied 2026-04-22
+2. ✅ EF secrets set (#2e, #3c) + all 11 Edge Functions deployed
+3. 🟡 Run prod-bootstrap.sql in Dashboard SQL Editor (#2c + #2d) — enables extensions + registers schedules
+4. ⏳ Enable Auth hooks in Dashboard (#2b) — without this every RPC returns P0005
+5. ⏳ Wire Resend SMTP + DNS for inveniotech.org (#3a + #3b) — unlocks real invite/recovery emails
+6. ⏳ Customize Supabase email templates with branding (#4)
+7. Build #12 (Playwright), #14 (import dashboards), #15 (monitoring queries) as parallel tracks
+8. Customer data: #5 (Phase A real dump) → #6 (Phase B spreadsheets) → #7 (flow templates)
+9. #8 go-live gate — run immediately before cutover to confirm all invariants green
