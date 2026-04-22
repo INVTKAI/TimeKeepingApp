@@ -1,67 +1,83 @@
 # TimeKeepingApp Backend
 
-Implementation target for [`../docs/backend-spec.md`](../docs/backend-spec.md) v0.4.1 (Supabase-first). **No code yet** — this folder holds the Supabase project's connection secrets and the salvaged v0.3 init migration SQL. The next implementation step is scaffolding `backend/supabase/` via the Supabase CLI.
+Supabase backend implementing [`../docs/backend-spec.md`](../docs/backend-spec.md) v0.4.3. Postgres + Auth + PostgREST + Edge Functions (Deno/TypeScript); RLS as primary tenancy isolation; plpgsql RPCs for transactional logic; Edge Functions for side-effect work.
+
+## Status
+
+| Slice | State |
+| --- | --- |
+| 1. Foundation — scaffold + tenancy/users schema + auth hooks + assert helpers + withAdminContext | ✅ Batches 1 / 2a / 2b |
+| 2. Core domain CRUD + admin Edge Functions + test gates | ✅ Batches 3a / 3b / 3c |
+| 3. Approval subsystem — schema + state-machine RPCs + overrides + badge cascade | ✅ Batches 4a / 4b / 4c / 4d |
+| 4. Notifications — outbox + delivery state + drain Edge Function + stall detection | ✅ Batches 5a / 5b / 5c |
+| 5. Migration tooling — `import-localstorage`, `import-spreadsheet`, `release-queued-invites` | ⏳ Batch 6 |
+| 6. Export — `export-labor` Edge Function (CSV/XLSX) | ⏳ Batch 7 |
+
+All commits through `e1cfd73` are on `origin/main`. Test suite: **229 pgTAP assertions** across 12 files; CI lint gate in place.
 
 ## Start here (fresh session)
 
-1. **Read the spec** — [`../docs/backend-spec.md`](../docs/backend-spec.md) v0.4.1. Authoritative on schema, RLS, RPCs, Edge Functions, auth lifecycle. Especially §6.1 (schema), §8 (API surface + `withAdminContext` wrapper + error format split), §11 (stack, conventions, test gates, key rotation).
-2. **Read the adversarial review** — [`../docs/adversarial-analysis-backend-spec-v0.4.md`](../docs/adversarial-analysis-backend-spec-v0.4.md) for why v0.4.1 closed the HSIs it did. Findings #7, #9, #11, #12 still open.
-3. **Connection secrets** live in `.env` (gitignored). Don't paste them into code or markdown. Rotation policy: spec §11.7.
+1. **Read the spec** — [`../docs/backend-spec.md`](../docs/backend-spec.md) v0.4.3. Especially §3 (tenancy), §4 (auth), §6 (domain model), §7 (approval subsystem), §8 (API surface), §11 (stack + test gates + key rotation).
+2. **Secrets** live in `.env` (gitignored). Rotation per spec §11.7.
+3. **Install prereqs:** Docker Desktop + Supabase CLI (`brew install supabase/tap/supabase`).
 
-## Salvaged artifact
+## Local dev
 
-[`salvage/init-migration-v0.3.sql`](salvage/init-migration-v0.3.sql) — the hand-authored SQL from the aborted v0.3 Fastify scaffold. Reference only; not directly usable. What to carry forward into the first Supabase migration:
+Ports are offset by +10 from Supabase defaults (so this project coexists with other local Supabase stacks):
 
-| Carry forward | Adapt | Drop |
-| --- | --- | --- |
-| `tenants` table structure | Add `login_max_attempts`, `login_lockout_minutes` (§4.7 / §6.1) | — |
-| Enum definitions (`UserRole`, `UserStatus`, etc.) | Add `P0*` SQLSTATE conventions | `AuthEventType` — Supabase owns auth.audit_log_entries |
-| UUID/timestamptz/jsonb conventions | — | — |
-| RLS policy shape | Rewrite to `(auth.jwt() ->> 'tenant_id')::uuid` | `current_setting('app.tenant_id', true)` approach |
-| — | Replace the `users` table with `public.users` linked 1:1 to `auth.users(id)` | `users` (auth-lifecycle flavor), `invites`, `password_history`, `sessions`, `auth_events` — Supabase Auth owns these |
-| — | Add `public.user_unlock_markers`, `audit_events` | — |
-
-## Next step: scaffold `supabase/`
+- API: `http://127.0.0.1:54331`
+- Postgres: `postgresql://postgres:postgres@127.0.0.1:54332/postgres`
+- Studio: `http://127.0.0.1:54333`
+- Inbucket (email testing): `http://127.0.0.1:54334`
 
 ```bash
-# 1. Install the Supabase CLI (if not already)
-brew install supabase/tap/supabase         # macOS
-# or: https://supabase.com/docs/guides/cli
-
-# 2. Initialize the project structure
-cd backend
-supabase init                               # creates supabase/config.toml + supabase/migrations/
-
-# 3. Link to the cloud project (uses SUPABASE_PROJECT_REF from .env; you'll be
-#    prompted for the DB password — it's *not* in .env, get it from the dashboard)
-supabase link --project-ref "$(grep SUPABASE_PROJECT_REF .env | cut -d= -f2)"
-
-# 4. Start the local stack (Docker required)
+# First-time: pull images + boot local stack
 supabase start
 
-# 5. Create the first migration — translate spec §6.1 + salvage into SQL
-supabase migration new init_tenancy_and_users
+# Reset DB + re-apply all migrations (destroys local data)
+supabase db reset
 
-# 6. Apply locally, test, then push to cloud
-supabase db reset                           # local
-supabase db push                            # cloud
+# Psql without a host-side client
+docker exec -i supabase_db_invenio-timekeeping psql -U postgres -d postgres
 ```
 
-## Build slicing
+## Running tests + CI gates
 
-Per the build-framing memory (vertical slices from v0.3, preserved through the Supabase pivot):
+```bash
+# Full pipeline — pgTAP suite + service-role-key usage lint
+scripts/run-checks.sh
 
-1. **Foundation** — first migration (tenants, public.users, audit_events, user_unlock_markers, RLS policies), **custom access-token hook** (§4.2 JWT claims + §4.8 failure gates), **`before-login` hook** (§4.7 lockout), **`withAdminContext` wrapper** (§8), user-admin Edge Functions (invite / reset / revoke / restore / change-role / unlock), first-login status-transition trigger, P0 test gates (§11.6).
-2. **Core domain CRUD** — employees, projects, subs, silos, areas, task codes, CWPs, FCOs. PostgREST + RLS policies.
-3. **Approval subsystem** — plpgsql RPCs (`submit_timesheet`, `approve_run`, `reject_run`, `recall_run`, `reassign_run`, `override_run`); `my_pending_approvals`, `project_readiness` RPCs; idempotency_keys table; `assert_session_live` + `assert_tenant_claim_present` helpers on every mutating RPC.
-4. **Badge override reconciliation** — `resolve_badge_override` RPC (§7.7).
-5. **Notifications** — `notification_outbox` + pg_cron drain Edge Function; Resend + HMAC-signed webhooks.
-6. **Migration tooling** — `import-localstorage`, `import-spreadsheet`, `release-queued-invites` Edge Functions.
-7. **Export** — `export-labor` Edge Function.
+# Just the pgTAP suite
+supabase test db
 
-## Layout after scaffolding
+# Just one test file
+supabase test db supabase/tests/60_state_machine_rpcs_test.sql
 
-Expected after `supabase init` + first migration:
+# Just the §11.6 lint
+scripts/lint-service-role-usage.sh
+```
+
+The pgTAP suite covers: RLS isolation per tenant-scoped table; the custom access-token + password-verification-attempt hooks; assert helpers + `auth.sessions` pairing trigger; every mutating RPC's happy path + P0001/P0002/P0003/P0004/P0008 error branches; badge-override parent-run cascade; notification outbox enqueue + delivery state machine + stall/reconcile producers.
+
+## Running the drain Edge Function
+
+`drain-notifications` is not user-facing — it's invoked by pg_cron (prod) or manually (local/ops). Shared-secret-guarded via `NOTIFICATION_DRAIN_SECRET` (see `.env`).
+
+```bash
+# Start the Edge Runtime with env vars loaded (.env is NOT auto-loaded)
+supabase functions serve --env-file .env
+
+# In another terminal: drain one batch
+curl -sS -X POST http://127.0.0.1:54331/functions/v1/drain-notifications \
+  -H "Authorization: Bearer $(grep NOTIFICATION_DRAIN_SECRET .env | cut -d= -f2)" \
+  -H "apikey: $(grep SUPABASE_ANON_KEY .env | cut -d= -f2-)" \
+  -H "Content-Type: application/json" \
+  -d '{"batch_size": 10}'
+```
+
+In local dev without a real `RESEND_API_KEY`, the drain logs each email and marks the row `sent` (no outbound SMTP). Set `RESEND_API_KEY=re_...` in `.env` for live delivery.
+
+## Layout
 
 ```
 backend/
@@ -69,12 +85,61 @@ backend/
 ├── .gitignore
 ├── README.md            # this file
 ├── salvage/
-│   └── init-migration-v0.3.sql
-└── supabase/            # created by `supabase init`
+│   └── init-migration-v0.3.sql   # reference only; from the pre-Supabase era
+├── scripts/
+│   ├── run-checks.sh               # CI entry
+│   └── lint-service-role-usage.sh  # §11.6 P0 gate
+└── supabase/
     ├── config.toml
-    ├── migrations/
-    │   └── <ts>_init_tenancy_and_users.sql
+    ├── migrations/     # 13 files; each batch has its own
     ├── functions/
-    │   └── _shared/with-admin-context.ts
-    └── seed.sql
+    │   ├── _shared/
+    │   │   ├── with-admin-context.ts   # mandatory wrapper for admin EFs (§8)
+    │   │   ├── admin-helpers.ts        # body parse, tenant-scoped lookup, audit, session invalidation
+    │   │   └── problem.ts              # RFC 7807 error helper
+    │   ├── invite-user/
+    │   ├── reset-password/
+    │   ├── revoke-user/
+    │   ├── restore-user/
+    │   ├── change-role/
+    │   ├── unlock-user/
+    │   └── drain-notifications/       # system-triggered; not withAdminContext
+    └── tests/          # pgTAP; numbered for execution order
 ```
+
+## Production deployment notes
+
+These aren't local-dev concerns but are worth capturing near the code:
+
+- **pg_cron schedules** — three jobs to register after deploy. Example:
+  ```sql
+  -- Drain every minute
+  SELECT cron.schedule('drain-notifications', '* * * * *', $$
+    SELECT net.http_post(
+      url := '<PROJECT_URL>/functions/v1/drain-notifications',
+      headers := jsonb_build_object('Authorization','Bearer '||current_setting('app.drain_secret')),
+      body := '{}'::jsonb
+    );
+  $$);
+  -- Reconcile stuck-sending every 5 min
+  SELECT cron.schedule('reconcile-stuck-sending', '*/5 * * * *', $$
+    SELECT public._reconcile_stuck_sending(5);
+  $$);
+  -- Stall detection daily
+  SELECT cron.schedule('emit-stall-notifications', '0 * * * *', $$
+    SELECT public._emit_stall_notifications();
+  $$);
+  ```
+- **Supabase Vault** — `tenants.webhook_signing_secret_ref` is treated as raw text in v1; wire it to Vault before going live with real webhooks.
+- **Service-role key rotation** — spec §11.7. Annual + post-incident + post-personnel-change.
+
+## Known gaps tracked for v1 close-out
+
+- **Automatic badge-override detection** at `submit_timesheet` time — needs a `badge_records` table not in the spec. Customer conversation before building.
+- **True multi-session concurrency tests** — `approve+approve` P0002 race etc. — needs `pg_background` or shell-level parallel psql. Current pgTAP exercises the single-session P0002 branch via manual state mutation.
+- **1× vs 2× SLA stall escalation** — `_emit_stall_notifications` always includes tenant admins; spec §7.6 says admins only at 2× SLA. Refine to two-event distinction when wiring production.
+- **Idempotency-key concurrent-race hardening** — current behavior is P0008 on PK conflict; acceptable for the common retry-after-network-blip case.
+
+## Salvaged artifact
+
+[`salvage/init-migration-v0.3.sql`](salvage/init-migration-v0.3.sql) is the hand-authored SQL from a pre-Supabase scaffold attempt. Kept for historical reference only; not applied and not part of the build.
