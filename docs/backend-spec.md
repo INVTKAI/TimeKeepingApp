@@ -1,6 +1,6 @@
 # TimeKeepingApp — Backend Specification
 
-**Status:** Draft v0.4.1 — Supabase-first pivot + HSI closure. Closes findings #1–#6 from [adversarial-analysis-backend-spec-v0.4.md](adversarial-analysis-backend-spec-v0.4.md): mandatory `withAdminContext` wrapper, shorter access-token TTL + revocation denylist, tenancy-hook failure mitigations, error-shape split (PostgREST native + RFC 7807), per-account lockout reinstated as v1, service-role key rotation policy. Companions: [backend-test-plan.md](backend-test-plan.md), [adversarial-analysis-backend-spec-v0.4.md](adversarial-analysis-backend-spec-v0.4.md). See Revision Log for changelog.
+**Status:** Draft v0.4.3 — editorial cleanup. Body and Revision Log trimmed to the Supabase-era spec only; pre-Supabase transition framing removed. No behavior change from v0.4.2. Companions: [backend-test-plan.md](backend-test-plan.md), [adversarial-analysis-backend-spec-v0.4.md](adversarial-analysis-backend-spec-v0.4.md). See Revision Log for changelog.
 **Scope:** A multi-tenant backend to replace the current localStorage-only prototype. Adds authentication with full password lifecycle, role-based access control, subcontractor modeling, and a configurable multi-node approval workflow for submitted hours.
 
 **Platform:** Built on **Supabase** — Postgres, Auth, PostgREST, Storage, and Edge Functions as one managed bundle. The backend is the combination of (a) schema + RLS policies in Supabase Postgres, (b) transactional plpgsql functions exposed as PostgREST RPCs, and (c) Edge Functions (Deno/TypeScript) for side-effect work (email, webhooks, exports, admin-bypass flows). There is no bespoke HTTP service. See §11 for stack details.
@@ -21,8 +21,8 @@
 ## 2. Non-goals (v1)
 
 - Cost/rate calculations and billing (flagged for v2 — `test_export.xlsx` shows the shape).
-- Cross-tenant user membership.
-- External SSO / OAuth (local credentials only; can be layered later).
+- **Cross-tenant user membership and cross-tenant aggregation.** An employee physically working across multiple tenants in the same pay period — e.g., 20h at Prime A Mon-Tue + 25h at Prime B Wed-Fri — has separate identities in each tenant in v1; neither tenant sees the other's hours. **Consequence: OT computation is per-tenant only**; a 45h cross-tenant week does not trigger the 5h OT line that a single-employer 45h week would. This is a payroll-correctness limitation, not just a login-ergonomics one, and is a known real-world operating pattern for the customer (consultants, loaned labor, multi-prime weeks). Resolution requires a v2 cross-tenant identity layer + a payroll aggregation surface that can see across tenants; spec'd in §10.
+- External SSO / OAuth (local credentials only in v1; Supabase supports OAuth / SAML drop-in if enabled later).
 - Mobile-specific APIs (reuse the same endpoints).
 - Real-time push / websockets for approval notifications (email/webhook only in v1).
 
@@ -48,17 +48,17 @@ Tenants are provisioned by a **super-admin** out of band — the Supabase servic
 
 ## 4. Authentication & password lifecycle
 
-Handled by **Supabase Auth**. This section documents how our v0.3 lifecycle requirements map to Supabase features, and lists accepted deviations from v0.3.
+Handled by **Supabase Auth**. This section documents the full lifecycle (credentials, sessions, invite flow, admin operations, audit, rate limiting) and how it maps onto Supabase primitives.
 
 ### 4.1 Password storage
 
-- **bcrypt** — Supabase Auth default. **Deviation from v0.3** (which specified argon2id). Supabase does not currently expose a hash-algorithm choice. Accepted: modern bcrypt cost factor is adequate against current hardware given a reasonable password policy; password policy defends the primary attack surface (weak passwords). No plaintext anywhere, ever.
+- **bcrypt** — Supabase Auth default; no hash-algorithm choice is exposed. Modern bcrypt cost factor is adequate against current hardware given a reasonable password policy; password policy defends the primary attack surface (weak passwords). No plaintext anywhere, ever.
 - Hashes live in `auth.users.encrypted_password`; not readable from the application (not exposed via PostgREST).
 - **Password history (last N=5) is dropped from v1.** Supabase Auth has no built-in history; enforcement would require a custom `pre-password-change` hook reading our own `password_history_hashes` table, which is meaningful work for a low-value defense. Tracked in §10.
 
 ### 4.2 Sessions
 
-- **JWT access tokens + refresh tokens.** **Deviation from v0.3** (which specified opaque DB-backed tokens for revocability). Supabase is JWT-native; revocation is achieved by a two-layer mechanism described below, closing the token-staleness gap v0.4.0 initially accepted.
+- **JWT access tokens + refresh tokens.** Supabase is JWT-native. Revocation is achieved by a two-layer mechanism described below, bounding the token-staleness window on sensitive operations.
 - **Access token TTL:** **15 minutes** (Supabase project config: `JWT_EXP=900`). **Reduced from Supabase's 1h default** to bound the residual window where a token minted pre-revocation remains cryptographically valid. Shorter TTL pays a modest refresh-call tax (~4× more `auth.refreshSession` calls); `supabase-js` handles this transparently.
 - **Refresh token TTL:** Supabase-project-level. Recommended: 12h for office staff; up to 30d for field users where re-auth friction is real. Set per deployment environment based on the dominant user mix.
 - **JWT claims** — the access token carries `sub` (= `auth.users.id`), `email`, `role` (Supabase-internal), plus our custom claims `tenant_id`, `app_role` (= our `public.users.role`), and `iat` (issued-at; stock JWT claim). Attached by the custom access-token hook (plpgsql function registered with Supabase). RLS policies read claims cheaply via `auth.jwt()`.
@@ -77,7 +77,7 @@ Handled by **Supabase Auth**. This section documents how our v0.3 lifecycle requ
    - Inserts a `public.users` row (`status='pending'`).
    - Calls `auth.admin.inviteUserByEmail(email, { data: { tenant_id, app_role: role } })` — Supabase generates the one-time invite token (valid 24h by default; configurable) and sends the invite email from the project-configured from-address.
 3. User clicks the invite link → completes password setup via Supabase's hosted accept-invite flow (or our own page that calls `supabase.auth.exchangeCodeForSession()` + `updateUser({ password })`).
-4. On first successful sign-in, a database trigger updates `public.users.status='active'`.
+4. After the password is set, the client calls `POST /rest/v1/rpc/finalize_self_activation` — a plpgsql function that updates `public.users.status` from `pending` to `active` for the caller (derived from `auth.jwt() ->> 'sub'`). Idempotent: if already `active`, no-op. RLS on `public.users` restricts the update to the caller's own row; the function itself enforces the `pending → active` transition only. Chosen over a trigger on `auth.users.last_sign_in_at` (v0.4.1's approach) because that column's update semantics are Supabase-internal and subject to change; explicit client-driven RPC is testable, supported, and breaks loudly if it fails (the user stays `pending`) rather than silently if Supabase alters its update pattern.
 5. **Queued-until-cutover invites** (§9 Phase A) use `auth.admin.createUser({ email_confirm: false })` without emitting an invite; at cutover, a batch Edge Function calls `auth.admin.generateLink({ type: 'invite' })` per user and sends.
 
 ### 4.4 Self-service update
@@ -233,9 +233,9 @@ audit_events(
 )
 ```
 
-**Tables owned by Supabase Auth** (in the `auth` schema, not ours): `auth.users`, `auth.sessions`, `auth.refresh_tokens`, `auth.identities`, `auth.audit_log_entries`. The v0.3 `invites`, `password_history`, `sessions`, `auth_events` tables are **dropped** — subsumed by Supabase Auth features (§4). `approval_actions` and `approval_reassignments` (§7.3) remain the dedicated audit tables for approval-subsystem events; `audit_events` captures everything else.
+**Tables owned by Supabase Auth** (in the `auth` schema, not ours): `auth.users`, `auth.sessions`, `auth.refresh_tokens`, `auth.identities`, `auth.audit_log_entries`. Invites, password history, session state, and auth events all live in Supabase Auth — no parallel application-owned tables. `approval_actions` and `approval_reassignments` (§7.3) are the dedicated audit tables for approval-subsystem events; `audit_events` captures everything else.
 
-**On first login** (invite acceptance or recovery), a database trigger on `auth.users` updates `public.users.status` from `pending` to `active`. Implemented as `AFTER UPDATE OF last_sign_in_at ON auth.users` with a `SECURITY DEFINER` trigger function.
+**Status transition from `pending` → `active`** is driven by an explicit client call to `POST /rest/v1/rpc/finalize_self_activation` after the user completes password setup (see §4.3 step 4). No trigger on `auth.users` — the RPC fails loudly if invoked on the wrong user or in the wrong state, where a trigger on Supabase-internal update semantics would have failed silently.
 
 ### 6.2 Employees
 
@@ -346,7 +346,7 @@ badge_overrides(
 
 ## 7. Approval system
 
-**Implementation mapping (v0.4):** the behavior in this section is unchanged from v0.3. Transitions (`approve`, `reject`, `recall`, `reassign`, `admin_override`, badge-override resolution) are implemented as **plpgsql functions exposed as PostgREST RPCs** — each function performs version-check + run UPDATE + action INSERT + dependent timesheet UPDATE in a single transaction (§7.4 "Concurrency"). Notification fan-out happens via an `AFTER` trigger on `approval_actions` that inserts into the `notification_outbox` table; a pg_cron-scheduled Edge Function drains the outbox and delivers (§7.6). Endpoint naming in §8.
+**Implementation mapping.** Transitions (`approve`, `reject`, `recall`, `reassign`, `admin_override`, badge-override resolution) are implemented as **plpgsql functions exposed as PostgREST RPCs** — each function performs version-check + run UPDATE + action INSERT + dependent timesheet UPDATE in a single transaction (§7.4 "Concurrency"). Notification fan-out happens via an `AFTER` trigger on `approval_actions` that inserts into the `notification_outbox` table; a pg_cron-scheduled Edge Function drains the outbox and delivers (§7.6). Endpoint naming in §8.
 
 ### 7.1 Flow templates
 
@@ -712,6 +712,12 @@ Each function: authorizes the caller via `auth.jwt()` + assignment-table lookups
 
 **Idempotency:** `idempotency_key` is a body parameter (rather than a header) because PostgREST RPCs don't give the function direct access to custom request headers. Stored in an `idempotency_keys` table keyed on `(actor_user_id, key)`, 24h TTL, cleaned by pg_cron. Same-actor retries return the cached response; different actors with the same key value race normally through the version check.
 
+### Self-service (RPCs)
+
+```
+POST /rest/v1/rpc/finalize_self_activation        → { status }        -- first-login status transition (§4.3 step 4)
+```
+
 ### Composed reads (RPCs)
 
 ```
@@ -829,22 +835,42 @@ At cutover the frontend switches from `DB.*` localStorage calls to **supabase-js
 - **In-app notifications / inbox.** v1 uses email + polling. Supabase Realtime subscriptions are available for push when wanted — deferrable.
 - **Real-time collaborative editing of a field timesheet.** Not in scope.
 - **Delegation.** Explicitly excluded — admin reassignment covers the requirement per §1.3. Revisit only if operational load on admins becomes a pain point.
-- **Password history (last N=5).** Dropped from v1 (§4.1). Reinstating requires a custom `pre-password-change` hook reading a `password_history_hashes` table. **Compliance-dependent**: if the customer is subject to SOX, HIPAA, ISO 27001, or NIST 800-53 (common in construction primes bidding on federal / utility contracts), password history may be audit-mandated and the dropped-from-v1 stance needs reversal. Resolve before implementation begins (see §10a below).
+- **Password history (last N=5).** Dropped from v1 (§4.1). Reinstating requires a custom `pre-password-change` hook reading a `password_history_hashes` table. **Compliance-dependent**: if the customer is subject to SOX, ISO 27001, or NIST 800-53 (common in construction primes bidding on federal / utility contracts), password history may be audit-mandated and the dropped-from-v1 stance needs reversal. Resolve before implementation begins (see §10a below).
+- **Cross-tenant identity + OT aggregation.** Confirmed customer-real: employees work across multiple tenants in a single pay period (consultants, loaned labor, multi-prime weeks). v1 treats these as separate identities per tenant (§2 non-goals); consequence is OT computation misses cross-tenant thresholds. **v2 architectural work required:**
+  - Cross-tenant identity layer — one physical person → N tenant memberships, with a stable global identity (candidates: Supabase's `auth.users` row shared across tenants via a membership table; or a separate `global_workers` table keyed on SSN/tax-id/external-payroll-id).
+  - Payroll aggregation surface — a service (Edge Function or dedicated job) that reads across tenant RLS using service role, computes correct OT against the pay-period-aggregated hours, and emits a correcting adjustment row per tenant OR reports aggregated totals to an external payroll processor. The spec's RLS-as-primary-isolation model assumes tenant-scoped reads; this is the architecturally load-bearing seam.
+  - Open sub-questions for v2: which identity key joins the membership rows (SSN/EIN/tax-id has PII implications); whether the customer wants auto-computed adjustments or just flagged "cross-tenant week" warnings; how the UI surfaces "your hours this week may include OT reported elsewhere"; whether the aggregation runs at pay-period close or continuously.
 
-### 10a. Compliance posture (pre-implementation question)
+### 10a. Compliance posture — target: SOC 2 Type II readiness
 
-The v0.4.1 spec defers the following to an explicit customer conversation. Answers affect v1 scope:
+**Target standard (v0.4.2):** the customer is not working with HIPAA data, not pursuing federal / DOD contracts, and has no stated audit obligation today. For a B2B SaaS selling into construction / industrial primes, the de facto "grown-up SaaS" intermediate standard is **SOC 2 Type II** — not a government mandate; an audit enterprise customers increasingly ask for before buying. v1 targets **SOC 2 Type II *readiness*** (not the audit itself): ship v1 with controls that would pass a SOC 2 audit with minimal retrofitting when a customer later demands one.
 
-| Question                                                               | If YES                                                                                                  |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Customer is subject to SOX                                             | Password history + audit-log retention policy (years) become v1 requirements                            |
-| Customer is subject to HIPAA                                           | Audit-log retention ≥ 6 years; encryption-at-rest verification; BAA required with Supabase              |
-| Customer is subject to ISO 27001                                       | Password history, lockout cool-down policy, access-review cadence documented                            |
-| Customer imports NIST 800-53 (common for federal / utility contracts)  | Password history, account lockout, session timeout, audit-log integrity (tamper-evident) all in v1      |
-| Customer requires MFA on admin accounts                                | Scope MFA into v1; Supabase Auth supports TOTP / WebAuthn                                               |
-| Customer has a data-residency constraint (EU, Canada, etc.)            | Supabase project region chosen accordingly; may block self-hosted / may block certain Supabase tiers    |
+**v1 controls supporting SOC 2 readiness** (all already in v0.4.1–v0.4.2):
 
-**Default posture** if the customer has no stated compliance obligations: v0.4.1 as specified. Per-account lockout (§4.7) is always v1; password history remains parked.
+| Control area                    | v1 implementation                                                                                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password policy                 | §4.4 (length, complexity, not-equal-to-username/email) enforced via Supabase project config + custom `password_strength` hook                                       |
+| Account lockout                 | §4.7 `before-login` hook, per-tenant config (`login_max_attempts`, `login_lockout_minutes`)                                                                         |
+| Session management              | §4.2 — 15-min access TTL, revocation denylist via `sessions_revoked_at` on state-mutating RPCs                                                                      |
+| Access reviews                  | Admin UI listing of active users + last-login timestamp from Supabase Auth (v1 readable; scheduled-review cadence is a procedural doc, not a feature)               |
+| Audit log                       | `auth.audit_log_entries` (Supabase-owned) + `audit_events` (domain) — retention ≥ 2 years by default                                                                |
+| Change management               | Spec-versioned; Supabase migrations in `supabase/migrations/`; PR-reviewed                                                                                          |
+| Encryption at rest              | Supabase managed Postgres on AWS — AES-256 encrypted at rest; no spec-level action needed                                                                           |
+| Encryption in transit           | TLS 1.2+ enforced at the Supabase edge; no spec-level action                                                                                                        |
+| Key rotation                    | §11.7 service-role key rotation policy (annual + post-incident + post-personnel)                                                                                    |
+| Tenant isolation                | §3 RLS + `withAdminContext` wrapper + §11.6 test gates                                                                                                              |
+| Backup / restore                | Supabase Pro tier: daily automated backups, 7-day retention by default (upgrade to longer retention if the customer requires); documented in ops runbook           |
+| MFA (optional)                  | Supabase Auth supports TOTP / WebAuthn enrollment — enabled at the project level; making it *required* for `app_role='admin'` is a one-line policy addition        |
+
+**Parked until customer escalation:**
+
+- **Password history** (§4.1) — not SOC 2-mandated; add if customer insists.
+- **Audit-log tamper-evidence** (hash chains or write-once storage) — not a SOC 2 requirement; add if pursuing NIST 800-53 / CMMC later.
+- **Data residency** — Supabase project is currently US-region; if a non-US customer appears, choose their project region at provision time. Not a v1 schema issue.
+- **SSO / SAML** — §10.
+- **BAA / HIPAA** — not applicable; skip.
+
+**If a customer later demands SOC 2 Type II audit**, the gap from v1 readiness is primarily procedural (written policies, change-management records, incident-response runbook, vendor-risk assessment of Supabase) rather than code — v1 is architected to clear the technical bar.
 
 ---
 
@@ -856,18 +882,18 @@ Concrete technology choices and API conventions. Picks optimize for leverage —
 
 | Concern | Choice | Notes |
 | --- | --- | --- |
-| Backend platform | **Supabase** (cloud or self-hosted) | Single integrated bundle. Replaces the v0.3 custom Fastify + Prisma + Redis stack. |
+| Backend platform | **Supabase** (cloud or self-hosted) | Single integrated bundle: Postgres, Auth, PostgREST, Storage, Edge Functions. |
 | Supabase tier | **Pro or higher** (cloud) / any (self-hosted) | Required for `pg_cron`, custom SMTP at project level, and the rate-limit headroom migration imports need. Free tier is acceptable only for prototype / eval; production must be Pro+. |
 | Database | **PostgreSQL 15+** (via Supabase) | Needed for `NULLS NOT DISTINCT` in UNIQUE constraints. RLS primary tenant enforcement. |
-| Auth | **Supabase Auth** | JWT access (15-min TTL, §4.2) + refresh tokens; bcrypt hashing. See §4 for deviations from v0.3 (argon2id, opaque sessions). |
+| Auth | **Supabase Auth** | JWT access (15-min TTL, §4.2) + refresh tokens; bcrypt hashing. |
 | CRUD API | **PostgREST** (auto-generated by Supabase) | One REST endpoint per `public.*` table; RLS-gated. Cursor pagination via `Range` header. |
 | Transactional logic | **plpgsql functions** exposed as PostgREST RPCs | Approval state machine, submit routing, readiness check, timesheet lifecycle. `SECURITY INVOKER` so RLS applies. Sensitive mutations call `assert_session_live` + `assert_tenant_claim_present` (§4.2, §4.8). |
 | Side-effect logic | **Supabase Edge Functions** (Deno, TypeScript) | Email, webhooks, exports, admin-bypass operations (invite, revoke, reset, unlock), spreadsheet import. Admin Functions extend the shared `withAdminContext` wrapper (§8); a CI lint gate rejects direct service-role key usage. |
-| Background jobs | **pg_cron** + a `notification_outbox` table + Edge Functions | Stall detection, notification delivery with retry, idempotency-key cleanup, invite release, `sessions_revoked_at` denylist cleanup (pruned after 15-min access-token TTL elapses). Replaces v0.3's BullMQ/Redis. |
+| Background jobs | **pg_cron** + a `notification_outbox` table + Edge Functions | Stall detection, notification delivery with retry, idempotency-key cleanup, invite release, `sessions_revoked_at` denylist cleanup (pruned after 15-min access-token TTL elapses). |
 | HTTP transport | Handled by Supabase | No custom HTTP framework; no bespoke service to host, scale, or monitor. |
 | Schema migrations | **Supabase CLI** (`supabase migration new` / `supabase db push`) | Versioned SQL files in `supabase/migrations/`. |
-| Password hashing | Supabase Auth default (**bcrypt**) | Deviation from v0.3 (argon2id). See §4.1. |
-| Session tokens | Supabase-issued **JWTs** | Deviation from v0.3 (opaque DB-backed). See §4.2. |
+| Password hashing | Supabase Auth default (**bcrypt**) | See §4.1. |
+| Session tokens | Supabase-issued **JWTs** | See §4.2. |
 | JWT tenant/role claims | **Custom access-token hook** (plpgsql) | Reads `public.users.tenant_id` and `role`; Supabase calls the hook when minting tokens. |
 | Email delivery | Supabase Auth built-in templates (auth flow) + **Resend** via Edge Functions (domain notifications) | Webhook delivery for domain events uses `X-TK-Signature` HMAC (§7.6). |
 | Language (custom code) | **TypeScript (strict)** for Edge Functions, **plpgsql** for RPCs | Edge Functions target the Deno runtime Supabase ships. |
@@ -951,7 +977,8 @@ Unique constraints with NULL-able columns use `NULLS NOT DISTINCT` (Postgres 15+
 
 - Every PR ships tests for the code it adds or changes.
 - Integration tests hit the **Supabase local stack** (`supabase start` — Postgres + Auth + PostgREST + Functions + Storage in Docker). No mocks — per the authoritative-source principle, we don't want mocks passing while production integrations fail.
-- plpgsql RPC tests assert the transactional contract: version-check + action insert + dependent updates all commit together, or all roll back.
+- **plpgsql unit tests use [`pgTAP`](https://pgtap.org/)** — loaded as a Postgres extension in the Supabase local stack. Individual RPC branches, SQLSTATE raises, and state-machine transitions are asserted directly in SQL for fine-grained coverage.
+- plpgsql RPC **integration** tests assert the transactional contract end-to-end (via PostgREST HTTP): version-check + action insert + dependent updates all commit together, or all roll back.
 - Concurrency tests simulate racing actors with `Promise.all` of concurrent requests; assert both winner effect and loser 409.
 - Multi-tenant isolation tests cover every write path (PostgREST table, RPC, Edge Function): caller in tenant A cannot observe/modify tenant B's data; responses are 404 (or empty collection) to avoid existence leaks.
 - Edge Function tests run under Deno via the Supabase CLI test harness.
@@ -1040,6 +1067,27 @@ Columns reflect the user's *role*. Approval authority is orthogonal — any user
 
 ## Revision Log
 
+### v0.4.3 — 2026-04-22 (editorial cleanup)
+
+Non-behavioral edit. Removed pre-Supabase transition framing from the body: §4 preamble + §4.1/§4.2 "Deviation from v0.3" callouts + §6.1 "v0.3 tables dropped" paragraph + §7 "unchanged from v0.3" preamble + §11.1 stack table's "Replaces v0.3" / "Deviation from v0.3" cells. Revision Log trimmed to the v0.4.x line only; the v0.4.0 entry is rewritten as a foundation statement (Supabase is the platform) rather than a pivot diff. Spec now reads forward-looking with no prior-architecture context needed.
+
+No section numbers change. No behavioral requirements change. Implementation state (Batches 1–5c, commits through `6c47c51`) unaffected.
+
+### v0.4.2 — 2026-04-21 (MSI closure + compliance reframing)
+
+Surgical revision closing findings #7 and #12 from [adversarial-analysis-backend-spec-v0.4.md](adversarial-analysis-backend-spec-v0.4.md), elevating finding #9 to a first-class v1 non-goal with payroll-correctness framing, and refocusing §10a on SOC 2 Type II readiness as the intermediate compliance target.
+
+Addressed:
+
+- **#7 Status transition (hook vs trigger).** Replaced the `AFTER UPDATE OF last_sign_in_at` trigger with an explicit **`POST /rest/v1/rpc/finalize_self_activation`** called by the client after password setup (§4.3 step 4, §6.1). Benefits: testable, supported, fails loudly on misuse rather than silently on Supabase internal changes.
+- **#9 Cross-tenant OT aggregation.** Escalated from "same-email ergonomics" to a first-class v1 non-goal (§2) with explicit payroll-correctness framing. Customer-confirmed real-world pattern: employees work across tenants in one pay period, and per-tenant OT computation misses cross-tenant thresholds. §10 expanded with the v2 architectural work required (cross-tenant identity layer + payroll aggregation surface). Not buildable in v1 without breaking the RLS-as-primary-isolation model.
+- **#12 pgTAP named.** §11.5 now explicitly names pgTAP for plpgsql unit tests (fine-grained branch / SQLSTATE coverage inside the DB), alongside Vitest for Edge Function / integration tests.
+- **§10a refocused.** HIPAA dropped (not applicable to this customer). **SOC 2 Type II readiness** adopted as the v1 target — an "intermediate" standard for B2B SaaS selling into enterprise customers. Matrix rewritten: shows which controls v1 already covers, what's parked, and what the procedural gap is between v1 readiness and an actual SOC 2 audit.
+
+Not addressed in v0.4.2 (tracked for future revisions):
+
+- Finding #11 (import rate limit strategy) — deferred to migration-tooling slice (slice 6). Will be spec'd in §9 Phase A when that slice starts; not blocking foundation or domain slices.
+
 ### v0.4.1 — 2026-04-21 (HSI closure for v0.4)
 
 Surgical revision closing findings #1–#6 from [adversarial-analysis-backend-spec-v0.4.md](adversarial-analysis-backend-spec-v0.4.md). No behavior change; security posture tightened and platform-seam failure modes named. Test-plan updates (§11.6 gates, pgTAP naming in §11.5) deferred to a companion test-plan revision.
@@ -1065,123 +1113,8 @@ Not addressed in v0.4.1 (tracked for future revisions):
 - Finding #8 idempotency-key body-vs-header ergonomics — partially resolved: state-mutating calls that go through Edge Functions can accept header; kept body-param fallback for direct-RPC calls.
 - Findings #9–#15 — carry over for v0.4.2 or resolved in implementation (pgTAP naming, tier notes already in §11.1, import rate-limit strategy still open for Phase A).
 
-### v0.4.0 — 2026-04-21 (Supabase pivot)
+### v0.4.0 — Supabase-first platform
 
-Material re-platform from the v0.3 custom-stack design (Fastify + Prisma + argon2 + opaque sessions + BullMQ/Redis) to a **Supabase-first architecture**. Behavioral requirements unchanged — multi-tenancy, RBAC, configurable approval workflow, audit, badge-override reconciliation, big-bang cutover — the platform underneath changes.
+Foundation entry: the backend is built on **Supabase** (Postgres + Auth + PostgREST + Storage + Edge Functions). Supabase Auth owns the full credential/session lifecycle (§4). Schema lives in `supabase/migrations/` with RLS as the primary tenant-isolation mechanism, reading the caller's `tenant_id` + `app_role` from a custom access-token-hook-injected JWT claim (§3, §4.2). Transactional logic runs as plpgsql RPCs exposed via PostgREST (§7, §8); side-effect work runs as Deno/TypeScript Edge Functions (§8). Background jobs use pg_cron + a notification_outbox table drained by an Edge Function (§7.6). No bespoke HTTP service.
 
-**Motivation.** Customer-side preference for a managed, integrated stack. Supabase Auth subsumes §4 almost entirely; PostgREST subsumes bulk CRUD (§8); plpgsql RPCs + Edge Functions cover the transactional and side-effect work. The net code-to-write shrinks materially with no compromise to the spec's behavioral surface.
-
-**Accepted deviations from v0.3:**
-
-- **§4.1** Password hashing: argon2id → **bcrypt** (Supabase Auth default; no algorithm choice exposed).
-- **§4.2** Sessions: opaque DB-backed → **JWT access + refresh**. Revocation via `auth.admin.signOut`; spec-level semantics preserved.
-- **§4.2** / **§6.1** `session_absolute_hours` / `session_idle_minutes` move from per-tenant to **Supabase-project global**; removed from the `tenants` table.
-- **§4.1** / **§10** Password history (last N=5) **dropped from v1** — Supabase has no built-in mechanism; low-value defense.
-- **§4.7** / **§10** Per-account login lockout **dropped from v1** — Supabase provides global per-IP rate limiting; per-account lockout requires a custom `pre-login` hook if the customer insists.
-
-**Sections rewritten:** §1 preamble, §3 (multi-tenancy mechanism — `auth.jwt()` claim replaces `current_setting('app.tenant_id')` GUC), §4 (entire auth lifecycle mapped onto Supabase Auth), §6.1 (tables: `public.users` linked 1:1 to `auth.users`; `invites` / `password_history` / `sessions` / `auth_events` dropped; `audit_events` added for domain-level audit), §7 (unchanged behavior; added implementation note pointing to RPCs + Edge Functions), §8 (entire API surface recast as PostgREST + RPCs + Edge Functions, with the domain-specific shape preserved), §9 Phase A (import via `auth.admin.createUser`; `release-queued-invites` Edge Function at cutover), §10 (deferred items for password history + per-account lockout), §11.1 (stack table entirely rewritten), §11.2, §11.4, §11.5.
-
-**Salvaged artifacts:**
-
-- v0.3 init migration SQL — becomes the starting point for `supabase/migrations/` after dropping the auth-lifecycle tables (§6.1) and rewriting RLS policies to use `auth.jwt()`.
-- All domain-model sections (§5 roles, §6.2-6.6, §7 behavioral text, §9 Phase B spreadsheet list, go-live gate) — unchanged.
-
-**Discarded:**
-
-- v0.3 scaffolded TypeScript/Fastify service — not a v0.4 artifact. Removed from the repo alongside this revision.
-
-### v0.1.1 — 2026-04-21 (partial — HSI-#2 resolved)
-
-Edits in this revision address HSI-#2 (silo / role model) from the adversarial review ([adversarial-analysis-backend-spec.md](adversarial-analysis-backend-spec.md)). Customer discovery confirmed:
-
-- **Same project → same approval chain template.** Flow templates are project-scoped; per-sub variance lives entirely at approver resolution.
-- **No joint ventures, no loaned labor, no craft-based routing, no zone-based routing.**
-- **Owner-operators** modeled as sub-of-one.
-- **Mid-period sub transitions** produce separate timesheets (sub is snapshotted at submit, not re-derived later).
-- **Cross-contract OT calculation** parked for v2.
-- **The prime's embedded rep** is a sub-employed user (could be any sub, including Invenio-as-sub) who acts as the project's prime rep. Modeled as a `project_role_assignments` entry with `role_label='prime_rep'`.
-- **Organizational structure** prevents the same user from appearing at two nodes on one run (the prime rep is never also the sub's node-1 approver) — so no "same user twice" rule is required in the spec.
-
-Concrete edits applied:
-
-- §1 goal #7 rewritten — silo-scoped vs project-scoped approver resolution.
-- §5 restructured — roles collapsed to `{admin, submitter}`; `approver` demoted from role to capability derived from assignment-table membership. "Foreman vs timekeeper vs self-entering staff" table gained a Prime-rep row.
-- §6.1 `users.role` enum narrowed.
-- §6.6 timesheet `subcontractor_id` comment clarified (snapshot-at-submit semantics).
-- §7.1 — added `approver_type='role_on_project'`, added `project_role_assignments` table, reserved-label table gained a scope column and `prime_rep`.
-- §7.2 — `silo_flow_assignments` replaced with `project_flow_assignments` (keyed on `project_id` only).
-- §7.4 routing algorithm — step 3 resolves project flow; error code `SILO_UNCONFIGURED` → `FLOW_UNCONFIGURED`.
-- Appendix B permission matrix — approver column converted to an overlay capability.
-
-All 6 high-severity adversarial-review issues resolved. Four medium-severity items addressed in v0.3.0 (below); remaining medium/low items from [adversarial-analysis-backend-spec.md](adversarial-analysis-backend-spec.md) deferred to a subsequent pass.
-
-### v0.3.0 — 2026-04-21 (Implementation readiness)
-
-Moves the spec from "design intent" to "ready to build." Four medium-severity items from the adversarial analysis addressed; stack and conventions picked.
-
-Addressed:
-
-- **M-9 `badge_overrides` orphan** — §6.6 schema expanded (submitted vs. badge hours, status, resolution metadata). New §7.7 specifies the **parallel, independent** reconciliation flow (single-node, `role_on_silo:timekeeper_admin` approver). Resolution can retroactively invalidate an approved parent run via the `resolved_badge_canonical` outcome; parallel independence preserves payroll flow for data-quality-only issues (e.g., dropped badge events).
-- **M-10 field-timesheet `open` state** — §6.6 documents the `open → draft → submitted → …` flow for field timesheets; claim / release semantics specified. §7.4 state machine diagram updated.
-- **M-8 staff-timesheet partial state** — §6.6 adds an explicit partial-state handling paragraph: per-project status badges, edit-scope limited to rejected rows, independent resubmit, payroll-downstream row independence.
-- **M-11 tenants schema incomplete** — §3 tenants table expanded with `timezone`, `locale`, `email_from_address`, `webhook_url`, `webhook_signing_secret_ref`, `session_absolute_hours`, `session_idle_minutes`, `stall_hours`.
-
-Stack & conventions:
-
-- New **§11 Implementation stack & conventions** — TypeScript + Fastify + Prisma + PostgreSQL 15+ + BullMQ/Redis + Resend + argon2 + Vitest + Supertest. RFC 7807 error format, cursor-based pagination, `UUID`/`TIMESTAMPTZ`/`NUMERIC` type rules, required-index inventory.
-
-Companion document:
-
-- **[backend-test-plan.md](backend-test-plan.md)** — structured test-plan checklist organized by subsystem (auth, tenancy, approval, timesheets, badge override, notifications, migration, export, integration scenarios, non-functional). P0/P1/P2 priority flags.
-
-### v0.2.0 — 2026-04-21 (HSI-#5 resolved; adversarial review complete)
-
-HSI-#5 was largely resolved by HSI-#2's approver-as-capability demotion and §9's preliminary role-remapping rules. This revision finalizes the wording and tightens the go-live gate, closing the adversarial review milestone.
-
-Concrete edits applied:
-
-- §9 Phase A item 4 — role remapping rule finalized (dropped "preliminary / pending" language). Explicit note that no legacy user maps to the old `approver` role; approval capability is assigned in Phase B.
-- §9 Phase B intro — clarified that approval-capability assignment for existing users is discovered in Phase B (legacy `role` column alone is insufficient to identify approvers).
-- §9 Go-live gate — added an explicit legacy-user audit check: no legacy user is silently dropped; each either is imported (per the Phase A mapping) or explicitly archived and documented.
-
-### v0.1.5 — 2026-04-21 (HSI-#4 resolved)
-
-Adopted **strict blocking with UX tweaks**: no tenant default flow, no grace mode. Given the Invenio-led operational model (HSI-#1), strict is workable; the pain point is localized to post-cutover project onboarding, which Invenio controls. The combined error code is now `PROJECT_NOT_READY` (subsuming the earlier `FLOW_UNCONFIGURED`) and covers missing flow assignment, missing silo roles, or missing project roles.
-
-Concrete edits applied:
-
-- §7.2 — strict-by-design language; structured error body + admin UI readiness gate as UX tweaks.
-- §7.4 — routing step 3 expanded to check flow + all referenced silo/project role assignments; unified error code `PROJECT_NOT_READY` with `missing` array enumerating specifics.
-- §8 — added `GET /projects/:id/readiness → { ready, missing }`. Renamed stale `/silo-assignments` endpoints to `/project-flow-assignments`. Added `/project-role-assignments` CRUD endpoints (missing since HSI-#2 schema changes). Section heading updated from "silo flow assignments" to "role/flow assignments".
-
-### v0.1.4 — 2026-04-21 (HSI-#3 resolved)
-
-Adopted **optimistic concurrency** for approval state transitions. Approval races are rare in practice and the 409 UX is clean; pessimistic row locks would introduce needless serialization.
-
-Concrete edits applied:
-
-- §7.3 — `approval_runs` gained `version INT NOT NULL DEFAULT 0` column.
-- §7.4 — new "Concurrency (optimistic)" subsection specifies the conditional-UPDATE pattern, same-transaction action insertion, and `RUN_STATE_CHANGED` 409 response. Applies uniformly to approve, reject, recall, reassign, and admin_override transitions.
-- §8 — Idempotency-Key header support added to `/approvals/:run_id/approve`, `/reject`, and `/override`. Keyed on `(actor_user_id, key)` with 24h TTL; absorbs client-retry duplicates without conflicting with the optimistic-concurrency version check.
-- §8 — Approvals endpoint heading updated ("approver + admin" was stale post-HSI-#2) to reflect the capability model.
-
-### v0.1.3 — 2026-04-21 (HSI-#6 resolved)
-
-Customer confirmed: **every foreman will have a user account** because they are required to submit their own hours for payroll. This removes the "foreman without login" edge case entirely — no fallback notification path needed, no separate crew-metadata field required.
-
-Concrete edits applied:
-
-- §7.1 reserved-labels table — `foreman` description updated to state that the role is always held by a user (foremen necessarily have accounts to get paid). Multi-foreman-per-silo support noted (already permitted by the existing UNIQUE constraint on `silo_role_assignments`).
-- No schema changes required — `silo_role_assignments.user_id` is already a FK to `users`; the existing go-live gate (every active silo has `foreman` and `timekeeper_admin` populated) enforces this automatically.
-
-### v0.1.2 — 2026-04-21 (HSI-#1 resolved)
-
-Customer confirmed **big-bang cutover** (Phase A data import + Phase B domain configuration both complete before go-live) and **Invenio-led Phase B** (spreadsheet intake from customer; Invenio validates and loads). Post-go-live, admin UI access can be delegated to customer admins.
-
-Concrete edits applied:
-
-- §9 renamed "Re-platforming and go-live" and restructured into Phase A (scripted import) + Phase B (spreadsheet-mediated domain configuration).
-- Phase B spreadsheet templates enumerated (subs, employee-subs, project-subs, project-flows, silo-roles, project-roles, timekeeper-assignments).
-- Historical timesheet handling options (a/b) documented.
-- Go-live gate added — explicit preconditions every tenant must clear before cutover.
-- Invites queued at Phase A, released only at cutover (not sent on import).
+See §11.1 for the complete stack table.
