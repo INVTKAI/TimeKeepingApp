@@ -137,6 +137,9 @@ export function Dashboard() {
                 <Link to="/users" className="invenio-btn-secondary">
                   Users
                 </Link>
+                <Link to="/admin/flows" className="invenio-btn-secondary">
+                  Flows
+                </Link>
                 <Link to="/exports" className="invenio-btn-secondary">
                   Export
                 </Link>

@@ -11,6 +11,9 @@ import { Users } from "@/routes/Users";
 import { TimesheetsList } from "@/routes/TimesheetsList";
 import { StaffTimesheet } from "@/routes/StaffTimesheet";
 import { FieldTimesheet } from "@/routes/FieldTimesheet";
+import { NewFieldTimesheet } from "@/routes/NewFieldTimesheet";
+import { FlowsList } from "@/routes/FlowsList";
+import { FlowEditor } from "@/routes/FlowEditor";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +70,30 @@ export function App() {
               element={
                 <RequireAuth>
                   <StaffTimesheet />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/timesheets/field/new"
+              element={
+                <RequireAuth role="admin">
+                  <NewFieldTimesheet />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/flows"
+              element={
+                <RequireAuth role="admin">
+                  <FlowsList />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/flows/:id"
+              element={
+                <RequireAuth role="admin">
+                  <FlowEditor />
                 </RequireAuth>
               }
             />

@@ -149,6 +149,11 @@ export function TimesheetsList() {
             >
               New staff week…
             </button>
+            {claims.appRole === "admin" && (
+              <Link to="/timesheets/field/new" className="invenio-btn-secondary">
+                + Field shells
+              </Link>
+            )}
             <Link to="/" className="invenio-btn-secondary">
               Dashboard
             </Link>
