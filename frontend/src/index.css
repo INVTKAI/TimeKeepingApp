@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    @apply bg-canvas text-ink-primary font-sans text-body antialiased;
+  }
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px theme("colors.canvas.DEFAULT"),
+      0 0 0 4px theme("colors.brand.DEFAULT");
+    border-radius: inherit;
+  }
+}
+
+@layer components {
+  .invenio-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 font-medium text-body transition-all duration-standard ease-invenio-standard select-none;
+    min-height: 44px;
+  }
+  .invenio-btn-primary {
+    @apply invenio-btn bg-brand text-ink-inverse hover:bg-brand-hover active:translate-y-[1px] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .invenio-btn-secondary {
+    @apply invenio-btn border border-border bg-surface text-ink-primary hover:bg-raised disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .invenio-btn-danger {
+    @apply invenio-btn bg-danger text-ink-inverse hover:bg-danger-hover disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .invenio-input {
+    @apply block w-full rounded-md border border-border bg-surface px-3 py-2 text-body text-ink-primary placeholder:text-ink-subtle focus:border-brand focus:outline-none transition-colors duration-standard;
+    min-height: 44px;
+  }
+  .invenio-input[aria-invalid="true"] {
+    @apply border-danger;
+  }
+
+  .invenio-card {
+    @apply rounded-lg border border-border bg-surface shadow-sm p-6;
+  }
+
+  .invenio-label {
+    @apply block text-sm font-medium text-ink-primary mb-1;
+  }
+
+  .invenio-error {
+    @apply text-sm text-danger mt-1;
+  }
+}

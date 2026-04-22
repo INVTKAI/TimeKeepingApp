@@ -10,10 +10,10 @@ Supabase backend implementing [`../docs/backend-spec.md`](../docs/backend-spec.m
 | 2. Core domain CRUD + admin Edge Functions + test gates | ✅ Batches 3a / 3b / 3c |
 | 3. Approval subsystem — schema + state-machine RPCs + overrides + badge cascade | ✅ Batches 4a / 4b / 4c / 4d |
 | 4. Notifications — outbox + delivery state + drain Edge Function + stall detection | ✅ Batches 5a / 5b / 5c |
-| 5. Migration tooling — `import-localstorage`, `import-spreadsheet`, `release-queued-invites` | ⏳ Batch 6 |
+| 5. Migration tooling — `import-localstorage`, `import-spreadsheet`, `release-queued-invites` | ✅ Batch 6 |
 | 6. Export — `export-labor` Edge Function (CSV/XLSX) | ⏳ Batch 7 |
 
-All commits through `e1cfd73` are on `origin/main`. Test suite: **229 pgTAP assertions** across 12 files; CI lint gate in place.
+Test suite: **241 pgTAP assertions** across 13 files; CI lint gate in place. Frontend rebuild against the v0.4 API surface lives at [`../frontend/`](../frontend/).
 
 ## Start here (fresh session)
 
