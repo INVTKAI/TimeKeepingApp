@@ -53,13 +53,13 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 | #   | Item                                                          | Status | Owner  | Notes                                                                                                  |
 | --- | ------------------------------------------------------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------ |
-| 11  | End-to-end smoke script (seed tenant → invite → submit → approve → drain → Mailpit verify) | ⏳ | Claude | ~100 lines of shell/Deno. Ops runs before every release                             |
+| 11  | End-to-end smoke script (seed tenant → invite → submit → approve → drain → Mailpit verify) | ✅ | Claude | `backend/tests-integration/end-to-end.test.ts` — runs as part of the EF test suite |
 | 12  | Frontend Playwright happy-path test                           | ⏳     | Claude | Sign-in → dashboard → approve → export. 30 min setup                                                  |
-| 13  | True multi-session P0002 concurrency test                     | ⏳     | Claude | Two psql sessions racing `approve_run`; exactly one should get P0002                                   |
+| 13  | True multi-session P0002 concurrency test                     | ✅     | Claude | `backend/tests-integration/concurrency.test.ts` — two parallel `approve_run`; 5/5 reliable             |
 | 14  | Import dashboards (frontend UI)                               | ⏳     | Claude | File upload driving `import-localstorage` + `import-spreadsheet`                                       |
 | 15  | Monitoring / alerting                                         | ⏳     | Invenio | Alert on `notification_failures` spike, stuck `sending` rows > 15 min, drain failures                  |
-| 16  | Service-role key rotation runbook (§11.7)                     | ⏳     | Claude | Document annual + post-incident + post-personnel rotation procedure                                    |
-| 17  | Backup / restore procedure doc                                | ⏳     | Invenio | Supabase Pro = 7-day automated backups; document the `db dump` restore path                            |
+| 16  | Service-role key rotation runbook (§11.7)                     | ✅     | Claude | `docs/ops/service-role-rotation-runbook.md`                                                           |
+| 17  | Backup / restore procedure doc                                | ✅     | Claude | `docs/ops/backup-restore-runbook.md`                                                                  |
 
 ---
 
