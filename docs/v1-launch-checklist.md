@@ -18,7 +18,8 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | --- | ------------------------------------------------------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
 | 1   | Pro-tier Supabase project provisioned                         | ✅     | Invenio | Confirmed 2026-04-22                                                                                  |
 | 2a  | Migrations pushed (14 files, 2026-04-22)                      | ✅     | Claude  | Applied 2026-04-22 via `supabase db push`. `migration list --linked` confirms Local=Remote for all 14. Smoke: PostgREST live (anon SELECT tenants → 200 []); submit_timesheet RPC reachable and returns P0005 TENANT_CLAIM_MISSING on unauthenticated call (confirms assert helpers work) |
-| 2b  | Auth hooks wired (custom_access_token + password_verification) | ⏳     | Invenio | Dashboard → Authentication → Hooks. Without `custom_access_token`, every RPC returns P0005 TENANT_CLAIM_MISSING |
+| 2b.1 | `custom_access_token_hook` enabled in Dashboard               | ⏳     | Invenio | Authentication → Hooks → Add hook → Postgres → `public.custom_access_token_hook`. Required: blocks every RPC until enabled |
+| 2b.2 | `password_verification_attempt_hook` — **v1.1, tier-gated**   | 🚫 v1.1 | Invenio | Team-tier Supabase only; Pro blocks with "plan type doesn't support". v1 falls back to built-in per-IP rate limit. Code deployed inert — enables immediately on tier upgrade. See spec §4.7 + §10 |
 | 2c  | pg_cron + pg_net extensions enabled                            | ✅     | Invenio | Applied 2026-04-22 via `backend/scripts/prod-bootstrap.sql` in Dashboard SQL Editor                   |
 | 2d  | pg_cron schedules registered                                   | ✅     | Invenio | All three active: `drain-notifications` (* * * * *), `reconcile-stuck-sending` (*/5 * * * *), `emit-stall-notifications` (0 * * * *). Drain secret in Vault; project URL inlined |
 | 2e  | `NOTIFICATION_DRAIN_SECRET` set in prod EF env                 | ✅     | Claude  | Set 2026-04-22 via `supabase secrets set` (48-char random). Smoke: drain returns 403 on wrong secret + 200 + claimed:0 on correct |
@@ -67,6 +68,7 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 ## v1.1 / nice-to-have (NOT blocking)
 
+- **Per-account lockout** — activate `password_verification_attempt_hook` in Dashboard once the project is on Team tier (Pro doesn't expose this hook). Code is deployed inert in v1; one click away from live. Spec §4.7.
 - Badge-override resolution UI (RPCs exist, no frontend yet)
 - Supabase Vault for `tenants.webhook_signing_secret_ref` (only matters when real webhooks ship)
 - Dark-mode toggle
@@ -86,7 +88,7 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 1. ✅ Push migrations to prod (#2a) — applied 2026-04-22
 2. ✅ EF secrets set (#2e, #3c) + all 11 Edge Functions deployed
 3. 🟡 Run prod-bootstrap.sql in Dashboard SQL Editor (#2c + #2d) — enables extensions + registers schedules
-4. ⏳ Enable Auth hooks in Dashboard (#2b) — without this every RPC returns P0005
+4. ⏳ Enable `custom_access_token_hook` in Dashboard (#2b.1) — without this every RPC returns P0005. Skip the password_verification one (#2b.2) — Pro tier doesn't expose it; v1.1 upgrade path
 5. ⏳ Wire Resend SMTP + DNS for inveniotech.org (#3a + #3b) — unlocks real invite/recovery emails
 6. ⏳ Customize Supabase email templates with branding (#4)
 7. Build #12 (Playwright), #14 (import dashboards), #15 (monitoring queries) as parallel tracks
