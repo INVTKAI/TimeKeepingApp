@@ -221,15 +221,17 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# Resend SMTP for revfire.us. RESEND_API_KEY must be present in the env when
+# `supabase config push` runs (source backend/.env, or set in the CLI shell).
+# Dashboard-configured SMTP is overridden by this on push.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "noreply@revfire.us"
+sender_name = "Invenio Timekeeping"
 
 # Email templates — branded for revfire.us. `supabase config push --linked`
 # syncs these to prod. content_path is relative to backend/supabase/.
@@ -248,27 +250,27 @@ otp_expiry = 3600
 
 [auth.email.template.invite]
 subject = "You've been invited to Invenio Timekeeping"
-content_path = "./templates/invite.html"
+content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.recovery]
 subject = "Reset your Invenio Timekeeping password"
-content_path = "./templates/recovery.html"
+content_path = "./supabase/templates/recovery.html"
 
 [auth.email.template.confirmation]
 subject = "Confirm your email address"
-content_path = "./templates/confirmation.html"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.magic_link]
 subject = "Your sign-in link"
-content_path = "./templates/magic_link.html"
+content_path = "./supabase/templates/magic_link.html"
 
 [auth.email.template.email_change]
 subject = "Confirm your new email address"
-content_path = "./templates/email_change.html"
+content_path = "./supabase/templates/email_change.html"
 
 [auth.email.template.reauthentication]
 subject = "Your verification code"
-content_path = "./templates/reauthentication.html"
+content_path = "./supabase/templates/reauthentication.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
@@ -302,11 +304,15 @@ max_frequency = "5s"
 enabled = true
 uri = "pg-functions://postgres/public/custom_access_token_hook"
 
-# Spec §4.7 — per-account lockout; counts failed sign-ins in public.login_failure_counters
-# and returns HTTP 429 once the window tips the threshold.
-[auth.hook.password_verification_attempt]
-enabled = true
-uri = "pg-functions://postgres/public/password_verification_attempt_hook"
+# Spec §4.7 — per-account lockout via the Password Verification Attempt hook.
+# DEFERRED TO v1.1: the hook is Team-tier+ on Supabase cloud and `config push`
+# rejects even the registration (HTTP 402) on Pro tier. Section removed
+# entirely until the org upgrades. To re-enable later: uncomment the three
+# lines below. Code stays in the build (public.password_verification_attempt_hook
+# + login_failure_counters) — the hook is harmless inert, just not routed.
+# [auth.hook.password_verification_attempt]
+# enabled = true
+# uri = "pg-functions://postgres/public/password_verification_attempt_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
