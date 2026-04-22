@@ -40,6 +40,17 @@ if [[ -z "${API_URL:-}" || -z "${SERVICE_ROLE_KEY:-}" || -z "${ANON_KEY:-}" ]]; 
   exit 2
 fi
 
+# Source backend/.env FIRST so we can pick up NOTIFICATION_DRAIN_SECRET and
+# any other non-Supabase secrets. Then re-export local Supabase values to
+# ensure the prod-cloud URL/keys that live in .env don't leak into the test
+# runner (integration tests MUST hit the local stack).
+if [[ -f "${backend_dir}/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source "${backend_dir}/.env"
+  set +a
+fi
+
 export SUPABASE_URL="${API_URL}"
 export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}"
 export SUPABASE_ANON_KEY="${ANON_KEY}"
