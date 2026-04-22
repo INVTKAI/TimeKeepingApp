@@ -159,7 +159,7 @@ export function StaffTimesheet() {
   // Active run for Recall button. NULL if none open.
   const runQuery = useQuery<{ id: string } | null>({
     queryKey: ["active_run_for_timesheet", id],
-    enabled: !!id && tsQuery.data?.status === "submitted",
+    enabled: !!id && tsQuery.data?.status === "in_review",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("approval_runs")
@@ -395,7 +395,7 @@ export function StaffTimesheet() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {ts.status === "submitted" && runQuery.data && (
+            {ts.status === "in_review" && runQuery.data && (
               <button
                 className="invenio-btn-secondary"
                 disabled={recall.isPending}

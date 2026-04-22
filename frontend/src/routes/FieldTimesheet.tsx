@@ -132,7 +132,7 @@ export function FieldTimesheet() {
 
   const runQuery = useQuery<{ id: string } | null>({
     queryKey: ["active_run_for_timesheet", id],
-    enabled: !!id && tsQuery.data?.status === "submitted",
+    enabled: !!id && tsQuery.data?.status === "in_review",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("approval_runs")
@@ -400,7 +400,7 @@ export function FieldTimesheet() {
                 {release.isPending ? "Releasing…" : "Release"}
               </button>
             )}
-            {ts.status === "submitted" && runQuery.data && (
+            {ts.status === "in_review" && runQuery.data && (
               <button
                 className="invenio-btn-secondary"
                 disabled={recall.isPending}
