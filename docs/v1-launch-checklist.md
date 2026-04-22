@@ -4,7 +4,7 @@ Living doc. Update status + dates as items land. Source of truth for "are we rea
 
 **Prod Supabase project:** `TimeKeepingApp` · ref `rrgocxusfaxzwgnjxpdh` · East US (N. Virginia) · Pro tier · region matches customer's US location.
 
-**Email domain:** `inveniotech.org` (DNS access confirmed user-side 2026-04-22). Supabase Auth emails from `noreply@inveniotech.org`; tenant notification default from-address same until per-tenant override.
+**Email domain:** `revfire.us` (DNS access confirmed user-side 2026-04-22). Supabase Auth emails from `noreply@revfire.us`; tenant notification default from-address same until per-tenant override.
 
 Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
@@ -24,9 +24,9 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | 2d  | pg_cron schedules registered                                   | ✅     | Invenio | All three active: `drain-notifications` (* * * * *), `reconcile-stuck-sending` (*/5 * * * *), `emit-stall-notifications` (0 * * * *). Drain secret in Vault; project URL inlined |
 | 2e  | `NOTIFICATION_DRAIN_SECRET` set in prod EF env                 | ✅     | Claude  | Set 2026-04-22 via `supabase secrets set` (48-char random). Smoke: drain returns 403 on wrong secret + 200 + claimed:0 on correct |
 | 3a  | Custom SMTP configured (Resend)                                | ⏳     | Invenio | Dashboard → Authentication → SMTP. Use the RESEND_API_KEY already in backend/.env                     |
-| 3b  | DNS records for `inveniotech.org` email (SPF / DKIM / DMARC)  | ⏳     | Invenio | Resend provides the records to add. User has DNS access confirmed                                     |
+| 3b  | DNS records for `revfire.us` email (SPF / DKIM / DMARC)  | ⏳     | Invenio | Resend provides the records to add. User has DNS access confirmed                                     |
 | 3c  | `RESEND_API_KEY` set in prod EF env                            | ✅     | Claude  | Set 2026-04-22 alongside drain secret. drain-notifications will deliver real email from next cron tick after DNS + SMTP land |
-| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ⏳ | Invenio | Dashboard → Authentication → Email templates; at minimum customize subject + copy for `inveniotech.org` |
+| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ⏳ | Invenio | Dashboard → Authentication → Email templates; at minimum customize subject + copy for `revfire.us` |
 
 ### Customer-side data
 
@@ -89,7 +89,7 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 2. ✅ EF secrets set (#2e, #3c) + all 11 Edge Functions deployed
 3. 🟡 Run prod-bootstrap.sql in Dashboard SQL Editor (#2c + #2d) — enables extensions + registers schedules
 4. ⏳ Enable `custom_access_token_hook` in Dashboard (#2b.1) — without this every RPC returns P0005. Skip the password_verification one (#2b.2) — Pro tier doesn't expose it; v1.1 upgrade path
-5. ⏳ Wire Resend SMTP + DNS for inveniotech.org (#3a + #3b) — unlocks real invite/recovery emails
+5. ⏳ Wire Resend SMTP + DNS for revfire.us (#3a + #3b) — unlocks real invite/recovery emails
 6. ⏳ Customize Supabase email templates with branding (#4)
 7. Build #12 (Playwright), #14 (import dashboards), #15 (monitoring queries) as parallel tracks
 8. Customer data: #5 (Phase A real dump) → #6 (Phase B spreadsheets) → #7 (flow templates)
