@@ -496,3 +496,24 @@ entrypoint = "./functions/drain-notifications/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/drain-notifications/*.html" ]
+
+[functions.import-localstorage]
+enabled = true
+# withAdminContext owns JWT verification, role/tenant gating, and RFC 7807
+# error responses (§8). Disable the Edge Runtime's generic 401 gate so the
+# wrapper can return its specific problem+json shapes.
+verify_jwt = false
+import_map = "./functions/import-localstorage/deno.json"
+entrypoint = "./functions/import-localstorage/index.ts"
+
+[functions.import-spreadsheet]
+enabled = true
+verify_jwt = false
+import_map = "./functions/import-spreadsheet/deno.json"
+entrypoint = "./functions/import-spreadsheet/index.ts"
+
+[functions.release-queued-invites]
+enabled = true
+verify_jwt = false
+import_map = "./functions/release-queued-invites/deno.json"
+entrypoint = "./functions/release-queued-invites/index.ts"
