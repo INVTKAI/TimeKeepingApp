@@ -65,3 +65,49 @@ export function useReassignRun() {
     onSettled: () => qc.invalidateQueries({ queryKey: PENDING_KEY }),
   });
 }
+
+// ----- Submitter-side mutations (timesheet editors) -----
+
+const TS_LIST_KEY = ["timesheets_list"];
+
+export function useSubmitTimesheet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { timesheet_id: string }) =>
+      rpc("submit_timesheet", {
+        p_timesheet_id: input.timesheet_id,
+        p_idempotency_key: crypto.randomUUID(),
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: TS_LIST_KEY }),
+  });
+}
+
+export function useRecallRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { run_id: string }) =>
+      rpc("recall_run", {
+        p_run_id: input.run_id,
+        p_idempotency_key: crypto.randomUUID(),
+      }),
+    onSettled: () => qc.invalidateQueries({ queryKey: TS_LIST_KEY }),
+  });
+}
+
+export function useClaimField() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { timesheet_id: string }) =>
+      rpc("claim_field_timesheet", { p_timesheet_id: input.timesheet_id }),
+    onSettled: () => qc.invalidateQueries({ queryKey: TS_LIST_KEY }),
+  });
+}
+
+export function useReleaseField() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { timesheet_id: string }) =>
+      rpc("release_field_timesheet", { p_timesheet_id: input.timesheet_id }),
+    onSettled: () => qc.invalidateQueries({ queryKey: TS_LIST_KEY }),
+  });
+}

@@ -129,6 +129,9 @@ export function Dashboard() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link to="/timesheets" className="invenio-btn-secondary">
+              Timesheets
+            </Link>
             {claims.appRole === "admin" && (
               <>
                 <Link to="/users" className="invenio-btn-secondary">

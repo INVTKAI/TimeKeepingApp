@@ -8,6 +8,9 @@ import { ResetPassword } from "@/routes/ResetPassword";
 import { Dashboard } from "@/routes/Dashboard";
 import { Exports } from "@/routes/Exports";
 import { Users } from "@/routes/Users";
+import { TimesheetsList } from "@/routes/TimesheetsList";
+import { StaffTimesheet } from "@/routes/StaffTimesheet";
+import { FieldTimesheet } from "@/routes/FieldTimesheet";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +51,30 @@ export function App() {
               element={
                 <RequireAuth role="admin">
                   <Users />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/timesheets"
+              element={
+                <RequireAuth>
+                  <TimesheetsList />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/timesheets/staff/:id"
+              element={
+                <RequireAuth>
+                  <StaffTimesheet />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/timesheets/field/:id"
+              element={
+                <RequireAuth>
+                  <FieldTimesheet />
                 </RequireAuth>
               }
             />
