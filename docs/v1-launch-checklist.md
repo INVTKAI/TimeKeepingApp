@@ -15,7 +15,7 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | #   | Item                                                          | Status | Owner   | Notes                                                                                                 |
 | --- | ------------------------------------------------------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
 | 1   | Pro-tier Supabase project provisioned                         | ✅     | Invenio | Confirmed 2026-04-22                                                                                  |
-| 2a  | Migrations pushed (14 files, 2026-04-22)                      | ⏳     | Claude  | `supabase db push` — ready to run pending user confirm                                                |
+| 2a  | Migrations pushed (14 files, 2026-04-22)                      | 🟡     | Claude  | Project linked; `supabase migration list --linked` confirms 0 remote. `supabase db push` — awaits user confirm  |
 | 2b  | Auth hooks wired (custom_access_token + password_verification) | ⏳     | Claude  | `config.toml` wires these locally; prod requires enabling in Dashboard → Auth → Hooks                 |
 | 2c  | pg_cron extension enabled + `pg_net` extension enabled        | ⏳     | Claude  | Dashboard → Database → Extensions                                                                     |
 | 2d  | pg_cron schedules: `drain-notifications`, `reconcile-stuck-sending`, `emit-stall-notifications` | ⏳ | Claude | SQL in `backend/README.md` "Production deployment notes" |
@@ -38,14 +38,14 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | 6f  | `project-roles.xlsx` loaded                                   | ⏳     | Invenio | #7                                                                                                    |
 | 6g  | `timekeeper-assignments.xlsx` loaded                          | ⏳     | Invenio | #8                                                                                                    |
 | 7   | Approval flow templates authored for each project             | ⏳     | Invenio | Discovery session + `approval_flows` / `approval_nodes` / `approval_node_approvers` populated         |
-| 8   | Go-live gate SQL checks all pass (§9.10)                      | ⏳     | Claude  | One script to run all six checks; blocks cutover if any fail                                          |
+| 8   | Go-live gate SQL checks all pass (§9.10)                      | ✅     | Claude  | `backend/scripts/go-live-gate.{sql,sh}` — 8-gate check. Runner supports local + prod targets. Run immediately before cutover with the target tenant_id |
 
 ### Missing UI features
 
 | #   | Item                                                          | Status | Owner  | Notes                                                                                                  |
 | --- | ------------------------------------------------------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------ |
-| 9   | Admin "New field timesheet" creator UI                        | ⏳     | Claude | Required for foremen to have anything to claim                                                         |
-| 10  | Flow-template CRUD UI (admin)                                 | ⏳     | Claude | approval_flows + nodes + approvers; drag-reorder. Without this, customer emails Invenio for every edit |
+| 9   | Admin "New field timesheet" creator UI                        | ✅     | Claude | `/timesheets/field/new` — bulk-create shells for a date range up to 14 days                             |
+| 10  | Flow-template CRUD UI (admin)                                 | ✅     | Claude | `/admin/flows` list + `/admin/flows/:id` editor. Up to 5 nodes; ↑/↓ reorder; approver pickers for user + role_on_silo + role_on_project |
 
 ---
 
