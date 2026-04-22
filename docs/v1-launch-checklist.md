@@ -18,15 +18,15 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | --- | ------------------------------------------------------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------- |
 | 1   | Pro-tier Supabase project provisioned                         | ✅     | Invenio | Confirmed 2026-04-22                                                                                  |
 | 2a  | Migrations pushed (14 files, 2026-04-22)                      | ✅     | Claude  | Applied 2026-04-22 via `supabase db push`. `migration list --linked` confirms Local=Remote for all 14. Smoke: PostgREST live (anon SELECT tenants → 200 []); submit_timesheet RPC reachable and returns P0005 TENANT_CLAIM_MISSING on unauthenticated call (confirms assert helpers work) |
-| 2b.1 | `custom_access_token_hook` enabled in Dashboard               | ⏳     | Invenio | Authentication → Hooks → Add hook → Postgres → `public.custom_access_token_hook`. Required: blocks every RPC until enabled |
+| 2b.1 | `custom_access_token_hook` enabled in Dashboard               | ✅     | Invenio | Enabled 2026-04-22. Every JWT now carries tenant_id + app_role + username claims |
 | 2b.2 | `password_verification_attempt_hook` — **v1.1, tier-gated**   | 🚫 v1.1 | Invenio | Team-tier Supabase only; Pro blocks with "plan type doesn't support". v1 falls back to built-in per-IP rate limit. Code deployed inert — enables immediately on tier upgrade. See spec §4.7 + §10 |
 | 2c  | pg_cron + pg_net extensions enabled                            | ✅     | Invenio | Applied 2026-04-22 via `backend/scripts/prod-bootstrap.sql` in Dashboard SQL Editor                   |
 | 2d  | pg_cron schedules registered                                   | ✅     | Invenio | All three active: `drain-notifications` (* * * * *), `reconcile-stuck-sending` (*/5 * * * *), `emit-stall-notifications` (0 * * * *). Drain secret in Vault; project URL inlined |
 | 2e  | `NOTIFICATION_DRAIN_SECRET` set in prod EF env                 | ✅     | Claude  | Set 2026-04-22 via `supabase secrets set` (48-char random). Smoke: drain returns 403 on wrong secret + 200 + claimed:0 on correct |
-| 3a  | Custom SMTP configured (Resend)                                | ⏳     | Invenio | Dashboard → Authentication → SMTP. Use the RESEND_API_KEY already in backend/.env                     |
-| 3b  | DNS records for `revfire.us` email (SPF / DKIM / DMARC)  | ⏳     | Invenio | Resend provides the records to add. User has DNS access confirmed                                     |
-| 3c  | `RESEND_API_KEY` set in prod EF env                            | ✅     | Claude  | Set 2026-04-22 alongside drain secret. drain-notifications will deliver real email from next cron tick after DNS + SMTP land |
-| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ⏳ | Invenio | Dashboard → Authentication → Email templates; at minimum customize subject + copy for `revfire.us` |
+| 3a  | Custom SMTP configured (Resend)                                | ✅     | Invenio+Claude | Wired 2026-04-22. Dashboard-set then synced via `supabase config push` from `[auth.email.smtp]` in config.toml (RESEND_API_KEY env-ref). Sender `noreply@revfire.us`, sender_name `Invenio Timekeeping` |
+| 3b  | DNS records for `revfire.us` email (SPF / DKIM / DMARC)  | ✅     | Invenio | `revfire.us` was already a verified Resend domain on the user's account — no new DNS records required |
+| 3c  | `RESEND_API_KEY` set in prod EF env                            | ✅     | Claude  | Set 2026-04-22 alongside drain secret. drain-notifications now delivers real email on every cron tick |
+| 4   | Supabase Auth email templates (invite, recovery) with customer branding | ✅ | Claude  | All 6 templates (invite, recovery, confirmation, magic_link, email_change, reauthentication) synced via `supabase config push` 2026-04-22. Branded HTML at `backend/supabase/templates/*.html`. Live invite test from Dashboard Users tab arrived correctly |
 
 ### Customer-side data
 
