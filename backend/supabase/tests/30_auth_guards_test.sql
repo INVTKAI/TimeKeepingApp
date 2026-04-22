@@ -121,8 +121,8 @@ SELECT is(
    JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public'
      AND (
-       p.proname ~ '^(approve|reject|reassign|override|submit|resolve|recall)_' OR
-       p.proname IN ('finalize_self_activation')
+       p.proname ~ '^(approve|reject|reassign|override|submit|resolve|recall|claim_field|release_field)_' OR
+       p.proname IN ('finalize_self_activation', 'create_badge_override')
      )
      AND (
        pg_get_functiondef(p.oid) NOT LIKE '%assert_session_live(%'
