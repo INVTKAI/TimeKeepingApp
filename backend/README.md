@@ -91,7 +91,7 @@ backend/
 │   └── lint-service-role-usage.sh  # §11.6 P0 gate
 └── supabase/
     ├── config.toml
-    ├── migrations/     # 13 files; each batch has its own
+    ├── migrations/     # 15 files; each batch has its own
     ├── functions/
     │   ├── _shared/
     │   │   ├── with-admin-context.ts   # mandatory wrapper for admin EFs (§8)
@@ -103,6 +103,9 @@ backend/
     │   ├── restore-user/
     │   ├── change-role/
     │   ├── unlock-user/
+    │   ├── import-localstorage/        # §9 Phase A — legacy blob → tenant
+    │   ├── import-spreadsheet/         # §9 Phase B — dispatch on file_type
+    │   ├── release-queued-invites/     # §9 cutover — generate invite links
     │   └── drain-notifications/       # system-triggered; not withAdminContext
     └── tests/          # pgTAP; numbered for execution order
 ```
