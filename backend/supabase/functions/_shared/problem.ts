@@ -43,6 +43,42 @@ export const Problems = {
     status: 500,
     ...(detail ? { detail } : {}),
   }),
+  ValidationError: (detail: string): Problem => ({
+    type: `${ERROR_BASE}/validation-error`,
+    title: "Request body failed validation",
+    status: 400,
+    detail,
+  }),
+  UserNotFound: (detail?: string): Problem => ({
+    type: `${ERROR_BASE}/user-not-found`,
+    title: "User not found in tenant",
+    status: 404,
+    ...(detail ? { detail } : {}),
+  }),
+  UserStateConflict: (detail: string): Problem => ({
+    type: `${ERROR_BASE}/user-state-conflict`,
+    title: "User state conflicts with requested operation",
+    status: 409,
+    detail,
+  }),
+  CannotTargetSelf: (): Problem => ({
+    type: `${ERROR_BASE}/cannot-target-self`,
+    title: "Admin cannot target their own account for this operation",
+    status: 409,
+    detail:
+      "Revoke, demote, and password-reset of an admin's own account must be performed by a different admin to avoid lockout.",
+  }),
+  EmailAlreadyExists: (): Problem => ({
+    type: `${ERROR_BASE}/email-already-exists`,
+    title: "Email already exists in this tenant",
+    status: 409,
+  }),
+  SupabaseAuthError: (detail: string): Problem => ({
+    type: `${ERROR_BASE}/supabase-auth-error`,
+    title: "Supabase Auth operation failed",
+    status: 502,
+    detail,
+  }),
 };
 
 export function problemResponse(p: Problem): Response {
