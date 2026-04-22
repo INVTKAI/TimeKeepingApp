@@ -517,3 +517,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/release-queued-invites/deno.json"
 entrypoint = "./functions/release-queued-invites/index.ts"
+
+[functions.export-labor]
+enabled = true
+verify_jwt = false
+import_map = "./functions/export-labor/deno.json"
+entrypoint = "./functions/export-labor/index.ts"
