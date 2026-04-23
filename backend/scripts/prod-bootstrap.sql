@@ -1,57 +1,47 @@
 -- Prod bootstrap — one-time setup for the prod Supabase project.
 --
--- Run via Dashboard → SQL Editor → New query. Replace the two placeholder
--- values below (__REPLACE_*__) with real values BEFORE running, then paste
+-- Run via Dashboard → SQL Editor → New query. Replace the two
+-- __REPLACE_*__ placeholders with real values BEFORE running, then paste
 -- all + Run. Idempotent: cron.unschedule + cron.schedule per job makes
--- re-runs safe; vault.create_secret errors on duplicate name, so the
--- UPDATE-or-create helper handles rotation.
+-- re-runs safe.
 --
--- The drain_secret value stored in Vault must MATCH the
--- NOTIFICATION_DRAIN_SECRET in the Edge Function env (Dashboard → Edge
--- Functions → Secrets, or `supabase secrets set`). Otherwise cron fires
--- but drain-notifications rejects every call with 403.
+-- The drain_secret here MUST MATCH NOTIFICATION_DRAIN_SECRET in the Edge
+-- Function env (Dashboard → Edge Functions → Secrets, or
+-- `supabase secrets set`). Otherwise cron fires but drain rejects with 403.
 --
--- Why Vault (not ALTER DATABASE SET): Supabase cloud doesn't grant the
--- project `postgres` role ALTER DATABASE privileges. Vault is the
--- sanctioned secret-management surface on Pro+; `vault.decrypted_secrets`
--- is a view the postgres role can read.
+-- ============================================================================
+-- WHY WE INLINE THE SECRET (not pull from Vault inside cron)
 --
--- Rotation: update the Vault secret via the upsert block below + update
--- the NOTIFICATION_DRAIN_SECRET Edge Function env to match, then re-run.
--- Do NOT commit a real secret to git — keep the placeholder version.
+-- On Supabase cloud (tested 2026-04-22 against pg_net 0.20.0, pg_cron on
+-- a Pro-tier Small compute project), calling
+--   SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'x'
+-- from inside a pg_cron job causes `net.http_post` to throw
+--   ERROR:  Out of memory
+--   CONTEXT: insert into net.http_request_queue ...
+-- every tick. The same SELECT works fine from the SQL Editor directly,
+-- and `net.http_post` works fine when called directly. The bug is in
+-- the pg_cron-subprocess × vault.decrypted_secrets combination.
+--
+-- Workaround: inline the secret into cron.command. Security trade-off:
+-- the secret lives in `cron.job.command` which is readable by the
+-- postgres role (scoped to this project on Supabase cloud — not
+-- cross-tenant). For a drain-only secret whose compromise impact is
+-- bounded to "attacker can trigger notification deliveries for events
+-- already queued" (not RLS bypass), this is acceptable.
+--
+-- Rotation: when NOTIFICATION_DRAIN_SECRET rotates, rerun this file
+-- with the new value. The cron.unschedule + cron.schedule handles the
+-- update. See docs/ops/service-role-rotation-runbook.md §Drain secret.
 -- ============================================================================
 
--- 1. Drain secret → Vault. Upsert pattern (Vault doesn't have a native
---    "create or update"; we delete-then-create if the name exists).
-DO $$
-DECLARE
-  v_secret_id uuid;
-BEGIN
-  SELECT id INTO v_secret_id FROM vault.secrets WHERE name = 'drain_secret';
-  IF v_secret_id IS NOT NULL THEN
-    PERFORM vault.update_secret(
-      v_secret_id,
-      '__REPLACE_WITH_NOTIFICATION_DRAIN_SECRET__',
-      'drain_secret',
-      'Shared-secret Bearer for pg_cron → /functions/v1/drain-notifications'
-    );
-  ELSE
-    PERFORM vault.create_secret(
-      '__REPLACE_WITH_NOTIFICATION_DRAIN_SECRET__',
-      'drain_secret',
-      'Shared-secret Bearer for pg_cron → /functions/v1/drain-notifications'
-    );
-  END IF;
-END $$;
-
--- 2. Extensions (Supabase Pro only — available on all Pro projects).
+-- 1. Extensions (Pro tier — available on all Pro projects).
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
--- 3. Cron schedules. `cron.unschedule` first makes re-runs idempotent.
+-- 2. Cron schedules. `cron.unschedule` first makes re-runs idempotent.
 
--- 3a. Drain notifications — every minute. Project URL inlined (not secret);
---     drain_secret read from Vault at cron-tick time.
+-- 2a. Drain notifications — every minute. Secret inlined per the
+--     Vault-in-cron OOM note above.
 SELECT cron.unschedule(jobid)
   FROM cron.job WHERE jobname = 'drain-notifications';
 SELECT cron.schedule(
@@ -59,13 +49,9 @@ SELECT cron.schedule(
   '* * * * *',
   $job$
   SELECT net.http_post(
-    url     := '__REPLACE_WITH_https_URL__' || '/functions/v1/drain-notifications',
+    url     := '__REPLACE_WITH_https_URL__/functions/v1/drain-notifications',
     headers := jsonb_build_object(
-      'Authorization', 'Bearer ' || (
-        SELECT decrypted_secret
-          FROM vault.decrypted_secrets
-         WHERE name = 'drain_secret'
-      ),
+      'Authorization', 'Bearer __REPLACE_WITH_NOTIFICATION_DRAIN_SECRET__',
       'Content-Type',  'application/json'
     ),
     body    := '{}'::jsonb
@@ -73,8 +59,8 @@ SELECT cron.schedule(
   $job$
 );
 
--- 3b. Reconcile rows stuck in 'sending' — every 5 minutes. Reclaims rows
---     whose drain attempt crashed mid-delivery.
+-- 2b. Reconcile rows stuck in 'sending' — every 5 minutes. No HTTP; this
+--     calls a public RPC directly so it doesn't need a secret.
 SELECT cron.unschedule(jobid)
   FROM cron.job WHERE jobname = 'reconcile-stuck-sending';
 SELECT cron.schedule(
@@ -83,8 +69,7 @@ SELECT cron.schedule(
   $job$ SELECT public._reconcile_stuck_sending(5) $job$
 );
 
--- 3c. Emit stall notifications — hourly. Scans open approval runs past
---     tenants.stall_hours and enqueues 'stalled' notifications.
+-- 2c. Emit stall notifications — hourly. Same shape as 2b.
 SELECT cron.unschedule(jobid)
   FROM cron.job WHERE jobname = 'emit-stall-notifications';
 SELECT cron.schedule(
@@ -93,8 +78,15 @@ SELECT cron.schedule(
   $job$ SELECT public._emit_stall_notifications() $job$
 );
 
--- 4. Verification — expect 3 rows.
+-- 3. Verification — expect 3 rows, all active.
 SELECT jobid, jobname, schedule, active
   FROM cron.job
  WHERE jobname IN ('drain-notifications', 'reconcile-stuck-sending', 'emit-stall-notifications')
  ORDER BY jobname;
+
+-- 4. Optional — wait 90 seconds, then confirm the drain is actually firing.
+-- SELECT r.start_time, r.status, left(r.return_message, 120)
+--   FROM cron.job_run_details r
+--   JOIN cron.job j ON j.jobid = r.jobid
+--  WHERE j.jobname = 'drain-notifications'
+--  ORDER BY r.start_time DESC LIMIT 5;
