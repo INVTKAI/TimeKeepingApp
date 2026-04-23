@@ -146,11 +146,17 @@ max_indexes = 5
 
 [auth]
 enabled = true
-# The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
-# in emails.
-site_url = "http://127.0.0.1:3000"
-# A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# The base URL of your website. Used as the allow-list for redirects and for constructing
+# URLs used in emails (invite, recovery, email-change). Set to the deployed frontend URL.
+site_url = "https://invenio-timekeeping.netlify.app"
+# *Exact* URLs that auth flows are permitted to redirect to post authentication. Include
+# localhost for local dev + the Netlify preview-URL pattern so PR previews work.
+additional_redirect_urls = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "https://invenio-timekeeping.netlify.app",
+  "https://*--invenio-timekeeping.netlify.app"
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 # Spec §4.2: 15-minute access token TTL to bound post-revocation staleness.
 jwt_expiry = 900
