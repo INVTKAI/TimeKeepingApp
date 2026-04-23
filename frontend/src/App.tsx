@@ -5,7 +5,7 @@ import { RequireAuth } from "@/routes/RequireAuth";
 import { SignIn } from "@/routes/SignIn";
 import { AcceptInvite } from "@/routes/AcceptInvite";
 import { ResetPassword } from "@/routes/ResetPassword";
-import { Dashboard } from "@/routes/Dashboard";
+import { RootHandler } from "@/routes/RootHandler";
 import { Exports } from "@/routes/Exports";
 import { Users } from "@/routes/Users";
 import { TimesheetsList } from "@/routes/TimesheetsList";
@@ -33,14 +33,7 @@ export function App() {
             <Route path="/sign-in" element={<SignIn />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route
-              path="/"
-              element={
-                <RequireAuth>
-                  <Dashboard />
-                </RequireAuth>
-              }
-            />
+            <Route path="/" element={<RootHandler />} />
             <Route
               path="/exports"
               element={

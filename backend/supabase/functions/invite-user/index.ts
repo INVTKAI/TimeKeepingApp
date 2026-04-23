@@ -63,9 +63,19 @@ Deno.serve(
     //    auth.users.raw_user_meta_data; the custom access-token hook can
     //    read it as a fallback, but the authoritative source is the
     //    public.users row inserted next.
+    // Nudge Supabase to point the invite link at /accept-invite directly —
+    // shortens the redirect chain by one hop. When INVITE_REDIRECT_BASE isn't
+    // set, Supabase uses site_url and the frontend RootHandler catches the
+    // invite params at `/` and forwards to /accept-invite anyway.
+    const redirectBase = Deno.env.get("INVITE_REDIRECT_BASE");
+    const redirectTo = redirectBase
+      ? `${redirectBase.replace(/\/$/, "")}/accept-invite`
+      : undefined;
+
     const { data: inviteData, error: inviteErr } = await ctx.adminClient.auth.admin
       .inviteUserByEmail(emailR.value, {
         data: { tenant_id: ctx.tenantId, app_role: roleR.value, username: usernameR.value },
+        ...(redirectTo ? { redirectTo } : {}),
       });
     if (inviteErr || !inviteData.user) {
       return problemResponse(
