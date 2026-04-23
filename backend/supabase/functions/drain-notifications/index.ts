@@ -24,6 +24,7 @@
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { CORS_HEADERS, preflightResponse } from "../_shared/cors.ts";
 
 type ClaimedRow = {
   id: string;
@@ -44,7 +45,7 @@ const MAX_ATTEMPTS = Number(Deno.env.get("NOTIFICATION_MAX_ATTEMPTS") ?? "3");
 function json(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...CORS_HEADERS },
   });
 }
 
@@ -163,6 +164,9 @@ async function deliver(sb: SupabaseClient, row: ClaimedRow): Promise<void> {
 }
 
 Deno.serve(async (req) => {
+  const preflight = preflightResponse(req);
+  if (preflight) return preflight;
+
   if (!DRAIN_SECRET) {
     return json(500, {
       type: "https://api.invenio.example/errors/internal",

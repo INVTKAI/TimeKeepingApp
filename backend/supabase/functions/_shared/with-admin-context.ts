@@ -14,6 +14,7 @@
 
 import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { Problems, problemResponse } from "./problem.ts";
+import { preflightResponse, withCors } from "./cors.ts";
 
 export type AdminContext = {
   user: User;
@@ -52,9 +53,13 @@ export function withAdminContext(
   }
 
   return async (req: Request): Promise<Response> => {
+    // Short-circuit CORS preflight before any auth work.
+    const preflight = preflightResponse(req);
+    if (preflight) return preflight;
+
     const authz = req.headers.get("authorization");
     if (!authz || !authz.toLowerCase().startsWith("bearer ")) {
-      return problemResponse(Problems.MissingAuth());
+      return withCors(problemResponse(Problems.MissingAuth()));
     }
     const token = authz.slice("bearer ".length).trim();
 
@@ -66,23 +71,23 @@ export function withAdminContext(
     });
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user) {
-      return problemResponse(Problems.InvalidToken(userErr?.message));
+      return withCors(problemResponse(Problems.InvalidToken(userErr?.message)));
     }
 
     // Extract claims from the same token we just verified.
     const claims = decodeJwtPayload(token);
     if (!claims) {
-      return problemResponse(Problems.InvalidToken("Malformed JWT payload"));
+      return withCors(problemResponse(Problems.InvalidToken("Malformed JWT payload")));
     }
     const tenantId = typeof claims.tenant_id === "string" ? claims.tenant_id : null;
     const appRole = typeof claims.app_role === "string" ? claims.app_role : null;
 
     if (!tenantId) {
       // Fail-closed — §4.8 hook-missing-claim mitigation.
-      return problemResponse(Problems.TenantClaimMissing());
+      return withCors(problemResponse(Problems.TenantClaimMissing()));
     }
     if (appRole !== "admin") {
-      return problemResponse(Problems.Forbidden("Admin role required"));
+      return withCors(problemResponse(Problems.Forbidden("Admin role required")));
     }
 
     // Service-role client bypasses RLS. Every handler call site MUST scope
@@ -93,16 +98,17 @@ export function withAdminContext(
     });
 
     try {
-      return await handler(req, {
+      const handlerResponse = await handler(req, {
         user: userData.user,
         userId: userData.user.id,
         tenantId,
         adminClient,
       });
+      return withCors(handlerResponse);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[withAdminContext] unhandled error:", msg);
-      return problemResponse(Problems.Internal(msg));
+      return withCors(problemResponse(Problems.Internal(msg)));
     }
   };
 }
