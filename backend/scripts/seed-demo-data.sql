@@ -111,32 +111,33 @@ BEGIN
   -- --------------------------------------------------------------------------
   -- Projects
   -- --------------------------------------------------------------------------
-  INSERT INTO public.projects (tenant_id, number, name, active)
-  VALUES (v_tenant, 'P-1001', 'Refinery Unit 40 Turnaround', true)
-  ON CONFLICT DO NOTHING
+  -- projects.external_id is the lookup key for Phase B imports — we mirror
+  -- `number` into it so imports can round-trip without extra work.
+  INSERT INTO public.projects (tenant_id, number, external_id, name, active)
+  VALUES (v_tenant, 'P-1001', 'P-1001', 'Refinery Unit 40 Turnaround', true)
+  ON CONFLICT (tenant_id, external_id) DO UPDATE
+    SET number = EXCLUDED.number, name = EXCLUDED.name
   RETURNING id INTO v_proj_alpha;
-  IF v_proj_alpha IS NULL THEN
-    SELECT id INTO v_proj_alpha FROM public.projects
-     WHERE tenant_id = v_tenant AND number = 'P-1001';
-  END IF;
 
-  INSERT INTO public.projects (tenant_id, number, name, active)
-  VALUES (v_tenant, 'P-1024', 'LNG Module Assembly', true)
-  ON CONFLICT DO NOTHING
+  INSERT INTO public.projects (tenant_id, number, external_id, name, active)
+  VALUES (v_tenant, 'P-1024', 'P-1024', 'LNG Module Assembly', true)
+  ON CONFLICT (tenant_id, external_id) DO UPDATE
+    SET number = EXCLUDED.number, name = EXCLUDED.name
   RETURNING id INTO v_proj_bravo;
-  IF v_proj_bravo IS NULL THEN
-    SELECT id INTO v_proj_bravo FROM public.projects
-     WHERE tenant_id = v_tenant AND number = 'P-1024';
-  END IF;
 
-  INSERT INTO public.projects (tenant_id, number, name, active)
-  VALUES (v_tenant, 'P-1108', 'Pipeline Station 7 Retrofit', true)
-  ON CONFLICT DO NOTHING
+  INSERT INTO public.projects (tenant_id, number, external_id, name, active)
+  VALUES (v_tenant, 'P-1108', 'P-1108', 'Pipeline Station 7 Retrofit', true)
+  ON CONFLICT (tenant_id, external_id) DO UPDATE
+    SET number = EXCLUDED.number, name = EXCLUDED.name
   RETURNING id INTO v_proj_charlie;
-  IF v_proj_charlie IS NULL THEN
-    SELECT id INTO v_proj_charlie FROM public.projects
-     WHERE tenant_id = v_tenant AND number = 'P-1108';
-  END IF;
+
+  -- Idempotent backfill for tenants where projects were created without
+  -- external_id (e.g. via the UI). Safe when external_id is already set
+  -- (WHERE external_id IS NULL protects it).
+  UPDATE public.projects
+     SET external_id = number
+   WHERE tenant_id = v_tenant
+     AND external_id IS NULL;
 
   -- --------------------------------------------------------------------------
   -- Areas (unique on (tenant_id, project_id, code) not defined — dedupe by SELECT)

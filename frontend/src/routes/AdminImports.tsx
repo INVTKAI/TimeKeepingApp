@@ -1,6 +1,21 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Download } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { humanizeError, invokeEdgeFunction } from "@/lib/problem";
+import {
+  useEmployees,
+  useProjects,
+  useSubcontractors,
+} from "@/lib/referenceData";
+import {
+  buildPhaseAExampleJson,
+  buildPhaseBCsv,
+  downloadText,
+  type PhaseBType as PhaseBTypeKind,
+  type TenantContext,
+} from "@/lib/importTemplates";
 import { Banner, PageHeader } from "@/components/PageHeader";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -32,6 +47,50 @@ export function AdminImports() {
   );
 }
 
+// Build the tenant context used to populate realistic example rows in
+// downloadable templates. Reuses the cached reference-data hooks.
+function useTenantCtx(): TenantContext | null {
+  const { claims } = useAuth();
+  const { data: projects } = useProjects();
+  const { data: subs } = useSubcontractors();
+  const { data: employees } = useEmployees();
+  const usersQuery = useQuery<{ id: string; username: string }[]>({
+    queryKey: ["tenant_users_for_templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, username")
+        .eq("status", "active")
+        .order("username");
+      if (error) throw error;
+      return (data ?? []) as { id: string; username: string }[];
+    },
+  });
+  const flowsQuery = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["tenant_flows_for_templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("approval_flows")
+        .select("id, name")
+        .eq("active", true)
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+  if (!projects || !subs || !employees || !usersQuery.data || !flowsQuery.data) {
+    return null;
+  }
+  return {
+    projects,
+    subs,
+    employees,
+    users: usersQuery.data,
+    flows: flowsQuery.data,
+    adminUsername: claims.username,
+  };
+}
+
 function useEfCall() {
   const { session } = useAuth();
   return async (name: string, body: unknown) => {
@@ -50,6 +109,7 @@ function useEfCall() {
 
 function PhaseAImporter() {
   const call = useEfCall();
+  const tenantCtx = useTenantCtx();
   const [file, setFile] = useState<File | null>(null);
   const [importTimesheets, setImportTimesheets] = useState(false);
   const [banner, setBanner] = useState<
@@ -57,6 +117,12 @@ function PhaseAImporter() {
   >(null);
   const [result, setResult] = useState<unknown>(null);
   const [working, setWorking] = useState(false);
+
+  const downloadExample = () => {
+    if (!tenantCtx) return;
+    const content = buildPhaseAExampleJson(tenantCtx);
+    downloadText("phase-a-example.json", content, "application/json");
+  };
 
   const run = async () => {
     if (!file) {
@@ -84,13 +150,27 @@ function PhaseAImporter() {
 
   return (
     <section className="invenio-card flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Phase A · localStorage blob</h2>
-      <p className="text-sm text-ink-muted">
-        One-shot import of the legacy app's <span className="font-mono">
-          DB.exportAll()
-        </span> JSON. Idempotent via <span className="font-mono">external_id</span>;
-        safe to re-run after augmentation.
-      </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold">Phase A · localStorage blob</h2>
+          <p className="text-sm text-ink-muted">
+            One-shot import of the legacy app's <span className="font-mono">
+              DB.exportAll()
+            </span> JSON. Idempotent via <span className="font-mono">external_id</span>;
+            safe to re-run after augmentation.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="invenio-btn-secondary text-xs !px-3 !py-1 !min-h-0"
+          onClick={downloadExample}
+          disabled={!tenantCtx}
+          title={!tenantCtx ? "Loading reference data…" : undefined}
+        >
+          <Download size={14} aria-hidden />
+          Download example
+        </button>
+      </div>
 
       <div>
         <label className="invenio-label">JSON file</label>
@@ -137,6 +217,7 @@ function PhaseAImporter() {
 
 function PhaseBImporter() {
   const call = useEfCall();
+  const tenantCtx = useTenantCtx();
   const [fileType, setFileType] = useState<PhaseBType>("subs");
   const [file, setFile] = useState<File | null>(null);
   const [jsonText, setJsonText] = useState("");
@@ -145,6 +226,12 @@ function PhaseBImporter() {
   >(null);
   const [result, setResult] = useState<unknown>(null);
   const [working, setWorking] = useState(false);
+
+  const downloadTemplate = () => {
+    if (!tenantCtx) return;
+    const content = buildPhaseBCsv(fileType as PhaseBTypeKind, tenantCtx);
+    downloadText(`template-${fileType}.csv`, content, "text/csv");
+  };
 
   const parseRows = async (): Promise<Record<string, unknown>[]> => {
     if (file) {
@@ -205,17 +292,33 @@ function PhaseBImporter() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="invenio-label">File type</label>
-          <select
-            className="invenio-input"
-            value={fileType}
-            onChange={(e) => setFileType(e.target.value as PhaseBType)}
-          >
-            {PHASE_B_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              className="invenio-input flex-1"
+              value={fileType}
+              onChange={(e) => setFileType(e.target.value as PhaseBType)}
+            >
+              {PHASE_B_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="invenio-btn-secondary !px-3 !py-1 !min-h-0 whitespace-nowrap"
+              onClick={downloadTemplate}
+              disabled={!tenantCtx}
+              title={
+                !tenantCtx
+                  ? "Loading reference data…"
+                  : "Download CSV template with example rows"
+              }
+            >
+              <Download size={14} aria-hidden />
+              Template
+            </button>
+          </div>
         </div>
         <div>
           <label className="invenio-label">File (.json or .csv)</label>
@@ -263,14 +366,16 @@ function PhaseBImporter() {
 // Minimal CSV parser — handles quoted values + escaped quotes. Good enough for
 // admin-curated files; we're not trying to be a general CSV library.
 function csvToObjects(text: string): Record<string, unknown>[] {
-  const lines = splitCsvLines(text);
+  // Drop blank + `#`-prefixed comment lines (our templates ship with leading
+  // `# …` notes so the admin can read context before the header row).
+  const lines = splitCsvLines(text).filter(
+    (l) => l.trim() !== "" && !l.trim().startsWith("#"),
+  );
   if (lines.length === 0) return [];
   const header = parseCsvLine(lines[0]);
   const out: Record<string, unknown>[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const raw = lines[i];
-    if (!raw.trim()) continue;
-    const cells = parseCsvLine(raw);
+    const cells = parseCsvLine(lines[i]);
     const row: Record<string, unknown> = {};
     for (let c = 0; c < header.length; c++) {
       row[header[c]] = cells[c] ?? "";
