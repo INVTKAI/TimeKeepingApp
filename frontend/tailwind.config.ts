@@ -1,9 +1,11 @@
 import type { Config } from "tailwindcss";
 
 // Wired to the InvenioStyle token source of truth at src/design/tokens.ts.
-// Hex literals intentionally duplicated here because Tailwind's config is
-// evaluated at build time by PostCSS and can't import runtime TS modules.
-// Keep these in sync with src/design/tokens.ts (light + dark).
+// Tailwind references CSS variables (defined in src/index.css) so that
+// [data-theme="dark"] on <html> can flip every utility without touching
+// the class names. Hex literals live in tokens.ts (light + dark maps) and
+// in index.css (the :root and [data-theme="dark"] blocks). All three must
+// agree — if you add a new color here, wire it in both other places.
 
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -11,61 +13,46 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: {
-          DEFAULT: "#F8FAFC",
-          dark: "#0B1220",
-        },
-        surface: {
-          DEFAULT: "#FFFFFF",
-          dark: "#111A2E",
-        },
-        raised: {
-          DEFAULT: "#F1F5F9",
-          dark: "#1A2744",
-        },
+        canvas: "var(--color-canvas)",
+        surface: "var(--color-surface)",
+        raised: "var(--color-raised)",
         border: {
-          DEFAULT: "#E2E8F0",
-          strong: "#CBD5E1",
-          dark: "#334155",
-          darkStrong: "#475569",
+          DEFAULT: "var(--color-border)",
+          strong: "var(--color-border-strong)",
         },
         ink: {
-          primary: "#1E293B",
-          muted: "#64748B",
-          subtle: "#94A3B8",
-          inverse: "#FFFFFF",
-          primaryDark: "#F1F5F9",
-          mutedDark: "#94A3B8",
+          primary: "var(--color-ink-primary)",
+          muted: "var(--color-ink-muted)",
+          subtle: "var(--color-ink-subtle)",
+          inverse: "var(--color-ink-inverse)",
         },
         brand: {
-          DEFAULT: "#0369A1",
-          hover: "#075985",
-          soft: "#E0F2FE",
-          pressed: "#CDE9FB",
-          accent: "#0891B2",
-          accentSoft: "#CFFAFE",
-          dark: "#22D3EE",
-          darkHover: "#67E8F9",
+          DEFAULT: "var(--color-brand)",
+          hover: "var(--color-brand-hover)",
+          soft: "var(--color-brand-soft)",
+          pressed: "var(--color-brand-pressed)",
+          accent: "var(--color-brand-accent)",
+          accentSoft: "var(--color-brand-accent-soft)",
         },
         success: {
-          DEFAULT: "#059669",
-          soft: "#D1FAE5",
-          deep: "#166534",
+          DEFAULT: "var(--color-success)",
+          soft: "var(--color-success-soft)",
+          deep: "var(--color-success-deep)",
         },
         warn: {
-          DEFAULT: "#D97706",
-          soft: "#FEF3C7",
-          deep: "#92400E",
+          DEFAULT: "var(--color-warn)",
+          soft: "var(--color-warn-soft)",
+          deep: "var(--color-warn-deep)",
         },
         danger: {
-          DEFAULT: "#DC2626",
-          hover: "#B91C1C",
-          soft: "#FEE2E2",
-          deep: "#991B1B",
+          DEFAULT: "var(--color-danger)",
+          hover: "var(--color-danger-hover)",
+          soft: "var(--color-danger-soft)",
+          deep: "var(--color-danger-deep)",
         },
         info: {
-          DEFAULT: "#7C3AED",
-          soft: "#EDE9FE",
+          DEFAULT: "var(--color-info)",
+          soft: "var(--color-info-soft)",
         },
       },
       fontFamily: {

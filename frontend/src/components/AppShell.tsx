@@ -15,8 +15,11 @@ import {
   Upload,
   FileSpreadsheet,
   LogOut,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 
 type NavItem = {
   to: string;
@@ -32,6 +35,7 @@ type NavSection = {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { claims, signOut } = useAuth();
+  const { effective, toggle } = useTheme();
   const isAdmin = claims.appRole === "admin";
 
   const sections = useMemo<NavSection[]>(
@@ -177,7 +181,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <div className="px-2 py-3 border-t border-border">
+        <div className="px-2 py-3 border-t border-border flex flex-col gap-0.5">
+          <button
+            onClick={toggle}
+            className="invenio-sidebar-item w-full"
+            aria-label={`Switch to ${effective === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${effective === "dark" ? "light" : "dark"} mode`}
+          >
+            {effective === "dark" ? (
+              <Sun size={18} aria-hidden />
+            ) : (
+              <Moon size={18} aria-hidden />
+            )}
+            <span>{effective === "dark" ? "Light mode" : "Dark mode"}</span>
+          </button>
           <button
             onClick={signOut}
             className="invenio-sidebar-item w-full"
