@@ -1,21 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabase";
 import { humanizeError, invokeEdgeFunction } from "@/lib/problem";
 import {
-  useEmployees,
-  useProjects,
-  useSubcontractors,
-} from "@/lib/referenceData";
-import {
   buildPhaseAExampleJson,
+  buildPhaseBBundle,
   buildPhaseBCsv,
   downloadText,
   type PhaseBType as PhaseBTypeKind,
-  type TenantContext,
 } from "@/lib/importTemplates";
+import { useTenantCtx } from "@/lib/useTenantCtx";
 import { Banner, PageHeader } from "@/components/PageHeader";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -45,50 +39,6 @@ export function AdminImports() {
       <PhaseBImporter />
     </div>
   );
-}
-
-// Build the tenant context used to populate realistic example rows in
-// downloadable templates. Reuses the cached reference-data hooks.
-function useTenantCtx(): TenantContext | null {
-  const { claims } = useAuth();
-  const { data: projects } = useProjects();
-  const { data: subs } = useSubcontractors();
-  const { data: employees } = useEmployees();
-  const usersQuery = useQuery<{ id: string; username: string }[]>({
-    queryKey: ["tenant_users_for_templates"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, username")
-        .eq("status", "active")
-        .order("username");
-      if (error) throw error;
-      return (data ?? []) as { id: string; username: string }[];
-    },
-  });
-  const flowsQuery = useQuery<{ id: string; name: string }[]>({
-    queryKey: ["tenant_flows_for_templates"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("approval_flows")
-        .select("id, name")
-        .eq("active", true)
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as { id: string; name: string }[];
-    },
-  });
-  if (!projects || !subs || !employees || !usersQuery.data || !flowsQuery.data) {
-    return null;
-  }
-  return {
-    projects,
-    subs,
-    employees,
-    users: usersQuery.data,
-    flows: flowsQuery.data,
-    adminUsername: claims.username,
-  };
 }
 
 function useEfCall() {
@@ -233,6 +183,12 @@ function PhaseBImporter() {
     downloadText(`template-${fileType}.csv`, content, "text/csv");
   };
 
+  const downloadBundle = () => {
+    if (!tenantCtx) return;
+    const content = buildPhaseBBundle(tenantCtx);
+    downloadText("phase-b-bundle.csv", content, "text/csv");
+  };
+
   const parseRows = async (): Promise<Record<string, unknown>[]> => {
     if (file) {
       const text = await file.text();
@@ -282,12 +238,30 @@ function PhaseBImporter() {
 
   return (
     <section className="invenio-card flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Phase B · curated spreadsheet</h2>
-      <p className="text-sm text-ink-muted">
-        Loads the spreadsheets that Phase A cannot populate — silo/project role
-        assignments, flow→project mappings, etc. Each row is validated and
-        errors are reported per-row; partial loads are safe to re-run.
-      </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-lg font-semibold">Phase B · curated spreadsheet</h2>
+          <p className="text-sm text-ink-muted">
+            Loads the spreadsheets that Phase A cannot populate — silo/project role
+            assignments, flow→project mappings, etc. Each row is validated and
+            errors are reported per-row; partial loads are safe to re-run.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="invenio-btn-secondary text-xs !px-3 !py-1 !min-h-0"
+          onClick={downloadBundle}
+          disabled={!tenantCtx}
+          title={
+            !tenantCtx
+              ? "Loading reference data…"
+              : "Download a combined CSV covering all 7 Phase B file types"
+          }
+        >
+          <Download size={14} aria-hidden />
+          Download all templates
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>

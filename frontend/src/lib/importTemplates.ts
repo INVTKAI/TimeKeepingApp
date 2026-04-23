@@ -22,6 +22,23 @@ export type PhaseBType =
   | "project_roles"
   | "timekeeper_assignments";
 
+// Direct-CRUD templates — simple column shapes matching the `public.<table>`
+// rows an admin maintains via the UI. These aren't wired to a specific
+// importer endpoint; the expected workflow is:
+//   1. Admin downloads a template and sends it to a non-technical user.
+//   2. User fills it in Excel, returns the .csv.
+//   3. Admin either pastes rows into the UI (small batch) or hands it off
+//      for a one-off SQL bulk-insert (large batch).
+// Column names match the PG table exactly so a simple \copy or SQL loader
+// works without translation.
+export type DirectTemplate =
+  | "employees"
+  | "projects"
+  | "areas"
+  | "task_codes"
+  | "cwps"
+  | "fcos";
+
 export type TenantContext = {
   projects: Project[];
   subs: Subcontractor[];
@@ -199,6 +216,164 @@ const SPECS: Record<PhaseBType, TemplateSpec> = {
     ],
   },
 };
+
+const DIRECT_SPECS: Record<DirectTemplate, TemplateSpec> = {
+  employees: {
+    headers: [
+      "external_id",
+      "first_name",
+      "last_name",
+      "type",
+      "craft",
+      "sub_short_code",
+      "active",
+    ],
+    buildRows: (ctx) => {
+      const s0 = ctx.subs[0]?.short_code ?? "INV";
+      const s1 = ctx.subs[1]?.short_code ?? s0;
+      return [
+        ["E101", "Jordan", "Lee", "field", "Welder", s0, "true"],
+        ["E102", "Sam", "Carter", "field", "Pipefitter", s1, "true"],
+        ["E103", "Avery", "Nguyen", "staff", "Project Engineer", s0, "true"],
+      ];
+    },
+    notes: [
+      "`external_id` must be unique per tenant — use the customer's payroll ID if possible.",
+      "`type` is `field` or `staff` (lowercase).",
+      "`sub_short_code` must match an existing subcontractors.short_code.",
+      "`active` is optional (defaults to true).",
+    ],
+  },
+
+  projects: {
+    headers: ["number", "external_id", "name", "active"],
+    buildRows: () => [
+      ["P-2001", "P-2001", "Offshore Platform Retrofit", "true"],
+      ["P-2002", "P-2002", "New Building Superstructure", "true"],
+      ["P-2003", "P-2003", "Compressor Station Upgrade", "true"],
+    ],
+    notes: [
+      "`number` is the display identifier; `external_id` is the stable lookup key used by Phase B imports.",
+      "Setting them equal is a safe default — deviate only if you already have an external identifier system.",
+      "`active` is optional (defaults to true).",
+    ],
+  },
+
+  areas: {
+    headers: ["project_number", "code", "name"],
+    buildRows: (ctx) => {
+      const p = ctx.projects[0]?.number ?? "P-1001";
+      return [
+        [p, "A-01", "North Yard"],
+        [p, "A-02", "South Yard"],
+        [p, "A-03", "Equipment Laydown"],
+      ];
+    },
+    notes: [
+      "`project_number` must match an existing projects.number in this tenant.",
+      "`code` + `name` are the area identifiers — both free-form text.",
+    ],
+  },
+
+  task_codes: {
+    headers: ["code", "name"],
+    buildRows: () => [
+      ["CARP", "Carpentry"],
+      ["WELD", "Welding"],
+      ["ELEC", "Electrical"],
+      ["LAB", "General Labor"],
+    ],
+    notes: [
+      "`code` should be short + unique per tenant (e.g. CARP, WELD).",
+      "`name` is the human-readable label.",
+    ],
+  },
+
+  cwps: {
+    headers: ["code", "description"],
+    buildRows: () => [
+      ["CWP-100", "Foundations + Civil"],
+      ["CWP-200", "Structural Steel"],
+      ["CWP-300", "Mechanical Installation"],
+      ["CWP-400", "Electrical + Instrumentation"],
+    ],
+    notes: [
+      "CWP = Construction Work Package. One row per package.",
+    ],
+  },
+
+  fcos: {
+    headers: ["code", "description"],
+    buildRows: () => [
+      ["FCO-001", "Additional foundation pour"],
+      ["FCO-002", "Scope growth — pipe spool rework"],
+      ["FCO-003", "Weather-related demobilization"],
+    ],
+    notes: [
+      "FCO = Field Change Order. One row per change-order tracking code.",
+    ],
+  },
+};
+
+export function buildDirectCsv(
+  table: DirectTemplate,
+  ctx: TenantContext,
+): string {
+  const spec = DIRECT_SPECS[table];
+  const rows = spec.buildRows(ctx);
+  const lines: string[] = [];
+  if (spec.notes) {
+    for (const n of spec.notes) lines.push(`# ${n}`);
+    lines.push(`# ---`);
+  }
+  lines.push(spec.headers.map(csvCell).join(","));
+  for (const r of rows) lines.push(r.map(csvCell).join(","));
+  return lines.join("\n") + "\n";
+}
+
+// Combined walkthrough of every Phase B file_type in one human-readable
+// file. Each section is a complete CSV (header + example rows) preceded by
+// a markdown heading, so the admin can review the whole set and split into
+// individual files for upload. Intended as the Phase B analog to the
+// Phase A single-file example.
+const PHASE_B_ORDER: Array<{ type: PhaseBType; label: string }> = [
+  { type: "subs", label: "Subcontractors" },
+  { type: "employee_subs", label: "Employee → Sub mapping" },
+  { type: "project_subs", label: "Project → Sub engagements" },
+  { type: "project_flows", label: "Project → Flow assignments" },
+  { type: "silo_roles", label: "Silo role assignments" },
+  { type: "project_roles", label: "Project role assignments" },
+  { type: "timekeeper_assignments", label: "Submitter assignments" },
+];
+
+export function buildPhaseBBundle(ctx: TenantContext): string {
+  const lines: string[] = [];
+  lines.push("# Phase B Import Bundle");
+  lines.push("");
+  lines.push(
+    "Each section below is a complete CSV for one `file_type` in the Phase B importer.",
+  );
+  lines.push(
+    "Copy each section (from the `# ---` separator before it down to the separator after) into its own `.csv` file,",
+  );
+  lines.push(
+    "then upload via /admin/imports → Phase B with the matching file type.",
+  );
+  lines.push("");
+  lines.push(
+    "Comment lines (`#` prefix) are stripped by the importer, so files are safe to upload as-is.",
+  );
+  lines.push("");
+  for (const entry of PHASE_B_ORDER) {
+    lines.push("");
+    lines.push(`# ==============================================================`);
+    lines.push(`# ${entry.label}  (file_type: ${entry.type})`);
+    lines.push(`# ==============================================================`);
+    lines.push(buildPhaseBCsv(entry.type, ctx).trimEnd());
+  }
+  lines.push("");
+  return lines.join("\n");
+}
 
 export function buildPhaseBCsv(
   fileType: PhaseBType,

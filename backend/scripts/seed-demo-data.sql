@@ -111,6 +111,14 @@ BEGIN
   -- --------------------------------------------------------------------------
   -- Projects
   -- --------------------------------------------------------------------------
+  -- Backfill FIRST so any pre-existing rows (created before this script
+  -- started setting external_id) match the ON CONFLICT target below.
+  -- Skipping this step risks creating duplicate project rows on re-run.
+  UPDATE public.projects
+     SET external_id = number
+   WHERE tenant_id = v_tenant
+     AND external_id IS NULL;
+
   -- projects.external_id is the lookup key for Phase B imports — we mirror
   -- `number` into it so imports can round-trip without extra work.
   INSERT INTO public.projects (tenant_id, number, external_id, name, active)
@@ -130,14 +138,6 @@ BEGIN
   ON CONFLICT (tenant_id, external_id) DO UPDATE
     SET number = EXCLUDED.number, name = EXCLUDED.name
   RETURNING id INTO v_proj_charlie;
-
-  -- Idempotent backfill for tenants where projects were created without
-  -- external_id (e.g. via the UI). Safe when external_id is already set
-  -- (WHERE external_id IS NULL protects it).
-  UPDATE public.projects
-     SET external_id = number
-   WHERE tenant_id = v_tenant
-     AND external_id IS NULL;
 
   -- --------------------------------------------------------------------------
   -- Areas (unique on (tenant_id, project_id, code) not defined — dedupe by SELECT)

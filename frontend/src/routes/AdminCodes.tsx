@@ -4,8 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { humanizeError } from "@/lib/problem";
+import { Download } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { DownloadTemplateButton } from "@/components/DownloadTemplateButton";
+import {
+  buildPhaseBCsv,
+  downloadText,
+  type DirectTemplate,
+} from "@/lib/importTemplates";
+import { useTenantCtx } from "@/lib/useTenantCtx";
 
 // Tabs:
 //   - Task Codes  — (code, name)
@@ -78,6 +86,35 @@ const SPECS: Record<
   },
 };
 
+// Subs tab uses the Phase B `subs` CSV shape (name, short_code, active).
+// Task codes / CWPs / FCOs use the direct table template.
+function TabTemplateButton({ table }: { table: Tab }) {
+  const ctx = useTenantCtx();
+  if (table === "subcontractors") {
+    const disabled = !ctx;
+    return (
+      <button
+        type="button"
+        className="invenio-btn-secondary"
+        disabled={disabled}
+        title={
+          disabled
+            ? "Loading reference data…"
+            : "Download subcontractors CSV template"
+        }
+        onClick={() => {
+          if (!ctx) return;
+          downloadText("template-subs.csv", buildPhaseBCsv("subs", ctx), "text/csv");
+        }}
+      >
+        <Download size={14} aria-hidden />
+        Template
+      </button>
+    );
+  }
+  return <DownloadTemplateButton table={table as DirectTemplate} size="md" />;
+}
+
 export function AdminCodes() {
   const [tab, setTab] = useState<Tab>("task_codes");
   const spec = SPECS[tab];
@@ -147,7 +184,8 @@ function CrudTable({
 
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <TabTemplateButton table={table} />
         <button className="invenio-btn-primary" onClick={() => setAddOpen(true)}>
           + Add
         </button>

@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { humanizeError } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { DownloadTemplateButton } from "@/components/DownloadTemplateButton";
 
 type Project = {
   id: string;
@@ -161,12 +162,15 @@ export function AdminProjectDetail() {
       <section>
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold">Areas ({areas.length})</h2>
-          <button
-            className="invenio-btn-primary"
-            onClick={() => setAddArea(true)}
-          >
-            + Add area
-          </button>
+          <div className="flex gap-2">
+            <DownloadTemplateButton table="areas" size="md" />
+            <button
+              className="invenio-btn-primary"
+              onClick={() => setAddArea(true)}
+            >
+              + Add area
+            </button>
+          </div>
         </div>
 
         {areas.length === 0 ? (

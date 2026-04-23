@@ -7,6 +7,7 @@ import { useSubcontractors } from "@/lib/referenceData";
 import { humanizeError } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { DownloadTemplateButton } from "@/components/DownloadTemplateButton";
 
 type Employee = {
   id: string;
@@ -86,9 +87,12 @@ export function AdminEmployees() {
         title="Employees"
         subtitle="Tenant roster. Full name + current subcontractor required."
         actions={
-          <button className="invenio-btn-primary" onClick={() => setAddOpen(true)}>
-            + Add employee
-          </button>
+          <>
+            <DownloadTemplateButton table="employees" size="md" />
+            <button className="invenio-btn-primary" onClick={() => setAddOpen(true)}>
+              + Add employee
+            </button>
+          </>
         }
       />
       {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}

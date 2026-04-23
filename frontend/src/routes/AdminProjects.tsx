@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { humanizeError } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { DownloadTemplateButton } from "@/components/DownloadTemplateButton";
 
 type Project = {
   id: string;
@@ -70,12 +71,15 @@ export function AdminProjects() {
         title="Projects"
         subtitle="Projects contain areas; labor rolls up to these."
         actions={
-          <button
-            className="invenio-btn-primary"
-            onClick={() => setAddOpen(true)}
-          >
-            + Add project
-          </button>
+          <>
+            <DownloadTemplateButton table="projects" size="md" />
+            <button
+              className="invenio-btn-primary"
+              onClick={() => setAddOpen(true)}
+            >
+              + Add project
+            </button>
+          </>
         }
       />
       {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
