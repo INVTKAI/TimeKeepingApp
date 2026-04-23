@@ -67,8 +67,17 @@ export function Users() {
     mutationFn: (id: string) => callEf("unlock-user", { user_id: id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tenant_users_admin"] }),
   });
+  const changeRole = useMutation({
+    mutationFn: (input: { id: string; new_role: "admin" | "submitter" }) =>
+      callEf("change-role", { user_id: input.id, new_role: input.new_role }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tenant_users_admin"] }),
+  });
 
-  const anyWorking = revoke.isPending || restore.isPending || unlock.isPending;
+  const anyWorking =
+    revoke.isPending ||
+    restore.isPending ||
+    unlock.isPending ||
+    changeRole.isPending;
 
   const guard = async (label: string, fn: () => Promise<unknown>) => {
     setBanner(null);
@@ -133,6 +142,33 @@ export function Users() {
                         {new Date(u.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-2 text-right space-x-2 whitespace-nowrap">
+                        {u.status !== "revoked" && !isSelf && (
+                          <button
+                            className="invenio-btn-secondary text-xs !px-3 !py-1 !min-h-0"
+                            disabled={anyWorking}
+                            onClick={() => {
+                              const next =
+                                u.role === "admin" ? "submitter" : "admin";
+                              if (
+                                confirm(
+                                  `Change ${u.username}'s role from ${u.role} to ${next}? Their active sessions will be invalidated.`,
+                                )
+                              ) {
+                                guard(
+                                  `Role changed for ${u.username}`,
+                                  () =>
+                                    changeRole.mutateAsync({
+                                      id: u.id,
+                                      new_role: next,
+                                    }),
+                                );
+                              }
+                            }}
+                            title={`Switch to ${u.role === "admin" ? "submitter" : "admin"}`}
+                          >
+                            {u.role === "admin" ? "Make submitter" : "Make admin"}
+                          </button>
+                        )}
                         {(u.status === "active" || u.status === "pending") && !isSelf && (
                           <button
                             className="invenio-btn-secondary text-xs !px-3 !py-1 !min-h-0"
