@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { downloadEdgeFunction, humanizeError } from "@/lib/problem";
+import { PageHeader } from "@/components/PageHeader";
 
 // Admin-only labor export. Calls the export-labor Edge Function and streams
 // the returned CSV or XLSX as a browser download. Includes status/project/sub
@@ -54,23 +54,12 @@ export function Exports() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Labor export</h1>
-            <p className="text-xs text-ink-muted font-mono">
-              Admin only · exports timesheet_lines × employees × projects
-            </p>
-          </div>
-          <Link to="/" className="invenio-btn-secondary">
-            Back to dashboard
-          </Link>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto p-6 flex flex-col gap-6">
-        <form
+    <div className="invenio-page">
+      <PageHeader
+        title="Labor report"
+        subtitle="Exports timesheet_lines × employees × projects."
+      />
+      <form
           onSubmit={handleSubmit(() => void 0)}
           className="invenio-card flex flex-col gap-4"
         >
@@ -165,7 +154,6 @@ export function Exports() {
             </li>
           </ul>
         </section>
-      </main>
     </div>
   );
 }

@@ -12,19 +12,19 @@ Pulled from `app.js` lines 140-178 (source of truth for the legacy nav).
 
 | Legacy view          | Role visibility           | New route                    | Status  | Notes |
 | -------------------- | ------------------------- | ---------------------------- | ------- | ----- |
-| Dashboard            | everyone                  | `/`                          | ✅ done | Currently shows `my_pending_approvals`; keep as-is. |
-| My Timesheet         | staff + admin             | `/my-timesheets`             | 🟡 partial | Rename from current `/timesheets`; rescope to personal-only. |
-| Field Timesheets     | timekeeper + admin        | `/field-timesheets`          | 🟡 partial | Currently folded into `/timesheets` "Open field" section. Split out. |
-| Weekly Check         | timekeeper + admin        | `/weekly-check`              | ❌ not built | **Reconciliation view:** badge-hours vs entered-hours per employee per day across a week. Requires `badge_records` schema which is not in spec (customer conversation per §10 known-gaps). **Defer until customer decides on badge_records** — ship a placeholder page that explains "badge reconciliation deferred pending customer data-shape confirmation." |
-| Manage Timesheets    | admin                     | `/admin/timesheets`          | ❌ not built | Tenant-wide timesheet list + status/project/sub/date filters. |
-| Employees            | admin                     | `/admin/employees`           | ❌ not built | Legacy: list, add, edit, deactivate. |
-| Projects             | admin                     | `/admin/projects`            | ❌ not built | Legacy: list + Areas subtable per project. |
-| Codes & Areas        | admin                     | `/admin/codes`               | ❌ not built | Tabs for Task Codes / CWPs / FCOs / Areas. |
-| Badge System         | admin                     | `/admin/badges`              | ❌ partial | Backend has `create_badge_override` + `resolve_badge_override` RPCs. No `badge_records` table — so the legacy "view raw badge records" page can't be rebuilt identically. Show badge_overrides (open / resolved). |
-| Labor Report         | admin                     | `/exports`                   | ✅ done | Keep as-is. |
-| —                    | admin                     | `/admin/users`               | ✅ done | v0.4-only; not in legacy. |
-| —                    | admin                     | `/admin/flows`               | ✅ done | v0.4-only; not in legacy. |
-| —                    | admin                     | `/admin/imports`             | ❌ not built | v0.4-only; Phase A/B data upload (#14). Build in Phase 2. |
+| Dashboard            | everyone                  | `/`                          | ✅ done | Pending-approvals list + approve/reject/reassign actions. |
+| My Timesheet         | staff + admin             | `/my-timesheets`             | ✅ done | Split from `/timesheets`; personal staff weeks only. |
+| Field Timesheets     | timekeeper + admin        | `/field-timesheets`          | ✅ done | Claimed + open-to-claim crew day-sheets. |
+| Weekly Check         | timekeeper + admin        | `/weekly-check`              | ✅ placeholder | Placeholder page shipped — defers badge_records reconciliation to v1.1. |
+| Manage Timesheets    | admin                     | `/admin/timesheets`          | ✅ done | Tenant-wide list with kind/status/project/sub/date filters. |
+| Employees            | admin                     | `/admin/employees`           | ✅ done | List + add/edit/deactivate + sub-history on sub change. |
+| Projects             | admin                     | `/admin/projects` + `/admin/projects/:id` | ✅ done | List + detail page with areas subtable CRUD. |
+| Codes & Areas        | admin                     | `/admin/codes`               | ✅ done | 4 tabs: Task Codes / CWPs / FCOs / Subcontractors; all CRUD. |
+| Badge System         | admin                     | `/admin/badges`              | ✅ done | List + create override + resolve with ST/OT split + cascade hint. Renamed to "Badge Overrides". |
+| Labor Report         | admin                     | `/exports`                   | ✅ done | Date range + CSV/XLSX download. |
+| —                    | admin                     | `/admin/users`               | ✅ done | Moved from `/users`; back-compat redirect in place. |
+| —                    | admin                     | `/admin/flows`               | ✅ done | Flow templates + node editor. |
+| —                    | admin                     | `/admin/imports`             | ✅ done | Phase A blob import + Phase B spreadsheet import (JSON/CSV). |
 
 ## Sidebar spec
 
@@ -178,6 +178,30 @@ Exit criteria: customer-facing functional parity with legacy demo (minus Weekly 
 ## Estimates vs reality
 
 **Note to future self:** past estimates in this project have been 20-40% under. Track actuals in `docs/dev-time-log.md`; adjust future session plans based on observed velocity.
+
+## Status as of 2026-04-23 11:15
+
+**Phase 1 + 2 merged and shipped** in ~25 minutes of wall-clock time (vs 7h 45m
+estimate) — this is the pure-frontend CRUD scaffolding against an already-live
+PostgREST surface. See `docs/dev-time-log.md` for the multiplier callout.
+
+Deployed to `https://invenio-timekeeping.netlify.app`. Build green; no manual
+testing performed in-session — expect a follow-up "X page broke because Y" loop.
+
+**What's in the bag:**
+- `AppShell` with left sidebar, role-gated sections, lucide icons
+- `RequireAuth` now wraps children in AppShell by default (`bare` prop opts out)
+- Every admin CRUD page uses PostgREST directly (RLS handles auth) — admin
+  Edge Functions are still the path for user lifecycle + imports + exports
+- Badge overrides call `create_badge_override` / `resolve_badge_override` RPCs
+- Imports accept JSON or CSV client-side, POST to the existing EFs
+
+**What's NOT in this pass (future work):**
+- Phase 3 polish: mobile drawer, loading skeletons, empty-state art, keyboard
+  shortcuts, dark-mode toggle
+- Drag-reorder on approval flow nodes (currently up/down buttons)
+- Weekly Check real reconciliation (blocked on `badge_records` schema)
+- Playwright smoke tests (#12 on v1 checklist)
 
 ## Pre-compaction state — 2026-04-23 10:30
 

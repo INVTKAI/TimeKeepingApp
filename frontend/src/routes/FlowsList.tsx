@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/Modal";
 import { humanizeError } from "@/lib/problem";
+import { Banner, PageHeader } from "@/components/PageHeader";
 
 // Lists approval flows for the tenant. Click a flow to edit its nodes +
 // approvers. "+ New flow" creates a skeleton (one node) then routes into
@@ -87,41 +88,19 @@ export function FlowsList() {
   });
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Approval flow templates</h1>
-            <p className="text-xs text-ink-muted">
-              Admin only. Attach flows to projects via `project_flow_assignments`.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button className="invenio-btn-primary" onClick={() => setNewOpen(true)}>
-              + New flow
-            </button>
-            <Link to="/" className="invenio-btn-secondary">
-              Dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
+    <div className="invenio-page">
+      <PageHeader
+        title="Approval Flows"
+        subtitle="Templates; attach to projects via project_flow_assignments."
+        actions={
+          <button className="invenio-btn-primary" onClick={() => setNewOpen(true)}>
+            + New flow
+          </button>
+        }
+      />
+      {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
 
-      <main className="max-w-5xl mx-auto p-6 flex flex-col gap-4">
-        {banner && (
-          <div
-            role={banner.kind === "error" ? "alert" : "status"}
-            className={
-              banner.kind === "error"
-                ? "rounded-md bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger-deep"
-                : "rounded-md bg-brand-soft border border-brand/40 px-3 py-2 text-sm text-brand-hover"
-            }
-          >
-            {banner.text}
-          </div>
-        )}
-
-        {isLoading && <p className="text-ink-muted">Loading…</p>}
+      {isLoading && <p className="text-ink-muted">Loading…</p>}
         {error && (
           <div className="invenio-card border-danger/40 bg-danger-soft">
             <p className="text-danger-deep">{String(error)}</p>
@@ -179,7 +158,6 @@ export function FlowsList() {
             </table>
           </div>
         )}
-      </main>
 
       <NewFlowModal
         open={newOpen}

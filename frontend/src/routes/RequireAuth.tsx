@@ -1,13 +1,16 @@
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { AppShell } from "@/components/AppShell";
 
 type Props = {
   children: ReactNode;
   role?: "admin" | "submitter";
+  /** Opt out of the sidebar shell (e.g. full-bleed editors). */
+  bare?: boolean;
 };
 
-export function RequireAuth({ children, role }: Props) {
+export function RequireAuth({ children, role, bare }: Props) {
   const { loading, session, claims } = useAuth();
   const location = useLocation();
 
@@ -24,7 +27,7 @@ export function RequireAuth({ children, role }: Props) {
   }
 
   if (role && claims.appRole !== role) {
-    return (
+    const unauthorized = (
       <div className="flex min-h-screen items-center justify-center p-6">
         <div className="invenio-card max-w-md">
           <h1 className="text-xl font-semibold mb-2">Not authorized</h1>
@@ -35,7 +38,8 @@ export function RequireAuth({ children, role }: Props) {
         </div>
       </div>
     );
+    return bare ? unauthorized : <AppShell>{unauthorized}</AppShell>;
   }
 
-  return <>{children}</>;
+  return bare ? <>{children}</> : <AppShell>{children}</AppShell>;
 }

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { humanizeError, invokeEdgeFunction } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
+import { Banner, PageHeader } from "@/components/PageHeader";
 
 // Admin user management — list of tenant users with Invite / Revoke / Restore /
 // Unlock actions. Writes go through the admin Edge Functions via
@@ -81,44 +81,22 @@ export function Users() {
   };
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Users</h1>
-            <p className="text-xs text-ink-muted font-mono">
-              Tenant directory — admin only
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setInviteOpen(true)}
-              className="invenio-btn-primary"
-            >
-              Invite user…
-            </button>
-            <Link to="/" className="invenio-btn-secondary">
-              Back
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto p-6 flex flex-col gap-4">
-        {banner && (
-          <div
-            role={banner.kind === "error" ? "alert" : "status"}
-            className={
-              banner.kind === "error"
-                ? "rounded-md bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger-deep"
-                : "rounded-md bg-brand-soft border border-brand/40 px-3 py-2 text-sm text-brand-hover"
-            }
+    <div className="invenio-page">
+      <PageHeader
+        title="Users"
+        subtitle="Tenant directory — admin only."
+        actions={
+          <button
+            onClick={() => setInviteOpen(true)}
+            className="invenio-btn-primary"
           >
-            {banner.text}
-          </div>
-        )}
+            Invite user…
+          </button>
+        }
+      />
+      {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
 
-        {isLoading && <p className="text-ink-muted">Loading…</p>}
+      {isLoading && <p className="text-ink-muted">Loading…</p>}
         {error && (
           <div className="invenio-card border-danger/40 bg-danger-soft">
             <p className="text-danger-deep">
@@ -194,7 +172,6 @@ export function Users() {
             </table>
           </div>
         )}
-      </main>
 
       <InviteModal
         open={inviteOpen}

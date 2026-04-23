@@ -51,4 +51,53 @@
   .invenio-error {
     @apply text-sm text-danger mt-1;
   }
+
+  .invenio-sidebar {
+    @apply w-60 shrink-0 border-r border-border bg-surface sticky top-0 h-screen flex flex-col;
+  }
+  .invenio-sidebar-section {
+    @apply px-3 pt-2 pb-1 text-xs uppercase tracking-wide font-semibold text-ink-subtle;
+  }
+  .invenio-sidebar-item {
+    @apply flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-ink-primary hover:bg-raised transition-colors duration-standard select-none text-left;
+  }
+  .invenio-sidebar-item.is-active {
+    @apply bg-brand-soft text-brand-hover;
+  }
+  .invenio-sidebar-item:disabled {
+    @apply opacity-50 pointer-events-none;
+  }
+
+  .invenio-page {
+    @apply max-w-6xl mx-auto px-6 py-6 flex flex-col gap-6;
+  }
+  .invenio-page-header {
+    @apply flex items-start justify-between gap-4 flex-wrap;
+  }
+  .invenio-page-title {
+    @apply text-xl font-semibold;
+  }
+  .invenio-page-subtitle {
+    @apply text-sm text-ink-muted;
+  }
+
+  .invenio-table {
+    @apply w-full text-sm;
+  }
+  .invenio-table thead {
+    @apply bg-raised text-ink-muted text-left text-xs uppercase tracking-wide;
+  }
+  .invenio-table th {
+    @apply px-4 py-2 font-medium;
+  }
+  .invenio-table tbody tr {
+    @apply border-t border-border;
+  }
+  .invenio-table td {
+    @apply px-4 py-2;
+  }
+
+  .invenio-chip {
+    @apply inline-block rounded-sm px-2 py-0.5 text-xs font-medium;
+  }
 }

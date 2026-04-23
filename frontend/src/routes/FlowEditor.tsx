@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { humanizeError } from "@/lib/problem";
+import { Banner, PageHeader } from "@/components/PageHeader";
 
 // Flow template editor. A flow has 1-5 ordered nodes; each node has one or
 // more approvers via one of three branch types:
@@ -253,16 +254,12 @@ export function FlowEditor() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-lg font-semibold">{flow.name}</h1>
-            <p className="text-xs text-ink-muted">
-              {flow.active ? "Active" : "Inactive"} · {nodes.length} node{nodes.length === 1 ? "" : "s"}
-            </p>
-          </div>
-          <div className="flex gap-2">
+    <div className="invenio-page">
+      <PageHeader
+        title={flow.name}
+        subtitle={`${flow.active ? "Active" : "Inactive"} · ${nodes.length} node${nodes.length === 1 ? "" : "s"}`}
+        actions={
+          <>
             <button
               className="invenio-btn-secondary"
               disabled={patchFlow.isPending}
@@ -273,23 +270,10 @@ export function FlowEditor() {
             <Link to="/admin/flows" className="invenio-btn-secondary">
               Back to list
             </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto p-6 flex flex-col gap-4">
-        {banner && (
-          <div
-            role={banner.kind === "error" ? "alert" : "status"}
-            className={
-              banner.kind === "error"
-                ? "rounded-md bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger-deep"
-                : "rounded-md bg-brand-soft border border-brand/40 px-3 py-2 text-sm text-brand-hover"
-            }
-          >
-            {banner.text}
-          </div>
-        )}
+          </>
+        }
+      />
+      {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
 
         {/* Flow metadata */}
         <div className="invenio-card">
@@ -354,7 +338,6 @@ export function FlowEditor() {
             + Add node
           </button>
         </div>
-      </main>
     </div>
   );
 }

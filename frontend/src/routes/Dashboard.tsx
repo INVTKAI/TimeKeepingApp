@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
@@ -14,6 +13,7 @@ import {
   type PostgrestError,
 } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
+import { Banner, PageHeader } from "@/components/PageHeader";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -40,7 +40,7 @@ type ActionBanner =
 // ---- Dashboard --------------------------------------------------------------
 
 export function Dashboard() {
-  const { claims, signOut } = useAuth();
+  const { claims } = useAuth();
   const qc = useQueryClient();
 
   const [banner, setBanner] = useState<ActionBanner>(null);
@@ -118,55 +118,13 @@ export function Dashboard() {
     approve.isPending || reject.isPending || reassign.isPending;
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="border-b border-border bg-surface">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Invenio Timekeeping</h1>
-            <p className="text-xs text-ink-muted font-mono">
-              {claims.username ?? "—"} · {claims.appRole ?? "—"} · tenant{" "}
-              {claims.tenantId?.slice(0, 8) ?? "—"}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link to="/timesheets" className="invenio-btn-secondary">
-              Timesheets
-            </Link>
-            {claims.appRole === "admin" && (
-              <>
-                <Link to="/users" className="invenio-btn-secondary">
-                  Users
-                </Link>
-                <Link to="/admin/flows" className="invenio-btn-secondary">
-                  Flows
-                </Link>
-                <Link to="/exports" className="invenio-btn-secondary">
-                  Export
-                </Link>
-              </>
-            )}
-            <button onClick={signOut} className="invenio-btn-secondary">
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto p-6 flex flex-col gap-6">
-        {banner && (
-          <div
-            role="status"
-            className={
-              banner.kind === "error"
-                ? "rounded-md bg-danger-soft border border-danger/40 px-3 py-2 text-sm text-danger-deep"
-                : "rounded-md bg-brand-soft border border-brand/40 px-3 py-2 text-sm text-brand-hover"
-            }
-          >
-            {banner.text}
-          </div>
-        )}
-
-        <section>
+    <div className="invenio-page">
+      <PageHeader
+        title="Dashboard"
+        subtitle={`tenant ${claims.tenantId?.slice(0, 8) ?? "—"}`}
+      />
+      {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
+      <section>
           <h2 className="text-h2 font-semibold mb-4">My pending approvals</h2>
 
           {isLoading && (
@@ -248,7 +206,6 @@ export function Dashboard() {
             </ul>
           )}
         </section>
-      </main>
 
       <RejectModal
         target={rejectTarget}
