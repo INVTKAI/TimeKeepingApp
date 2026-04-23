@@ -133,11 +133,16 @@ export function Users() {
                         {new Date(u.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-2 text-right space-x-2 whitespace-nowrap">
-                        {u.status === "active" && !isSelf && (
+                        {(u.status === "active" || u.status === "pending") && !isSelf && (
                           <button
                             className="invenio-btn-secondary text-xs !px-3 !py-1 !min-h-0"
                             disabled={anyWorking}
                             onClick={() => guard(`Revoked ${u.username}`, () => revoke.mutateAsync(u.id))}
+                            title={
+                              u.status === "pending"
+                                ? "Cancels the unaccepted invite + bans sign-in"
+                                : undefined
+                            }
                           >
                             Revoke
                           </button>
