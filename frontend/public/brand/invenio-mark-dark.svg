@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Invenio">
+  <defs>
+    <linearGradient id="invenioMarkDark" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#invenioMarkDark)"/>
+  <path d="M21 17h22v7h-7.5v16H43v7H21v-7h7.5V24H21z" fill="#0B1220"/>
+</svg>

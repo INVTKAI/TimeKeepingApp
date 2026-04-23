@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Invenio splash icon">
+  <defs>
+    <linearGradient id="splashIcon" x1="332" y1="332" x2="692" y2="692" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0369A1"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+  <!-- Splash with transparent background (Expo fills the splash background
+       via app.json "backgroundColor"). Mark is centered at 360px squared. -->
+  <rect x="332" y="332" width="360" height="360" rx="80" fill="url(#splashIcon)"/>
+  <path d="M440 406h144v40h-49v132h49v40H440v-40h49V446h-49z" fill="#FFFFFF"/>
+</svg>

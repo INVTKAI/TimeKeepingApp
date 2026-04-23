@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { Logo } from "@/components/Logo";
 
 // Invite / recovery flow entry point. Supabase redirects the user here with
 // either a PKCE `code` in the query string (modern flow) or a recovery token
@@ -100,11 +101,14 @@ export function AcceptInvite() {
         className="invenio-card w-full max-w-sm flex flex-col gap-4"
         noValidate
       >
-        <div>
-          <h1 className="text-xl font-semibold">Set your password</h1>
-          <p className="text-sm text-ink-muted mt-1">
-            Pick a password of at least 12 characters with letters and digits.
-          </p>
+        <div className="flex flex-col items-center gap-3 pb-2 border-b border-border">
+          <Logo variant="lockup" size={40} />
+          <div className="text-center">
+            <h1 className="text-xl font-semibold">Set your password</h1>
+            <p className="text-sm text-ink-muted mt-1">
+              At least 12 characters with letters and digits.
+            </p>
+          </div>
         </div>
 
         <div>

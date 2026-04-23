@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
+import { Logo } from "@/components/Logo";
 
 type NavItem = {
   to: string;
@@ -150,13 +151,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen bg-canvas">
       <aside className="invenio-sidebar">
         <div className="px-4 py-4 border-b border-border">
-          <Link to="/" className="block">
-            <p className="text-sm font-semibold text-ink-primary leading-tight">
-              Invenio Timekeeping
-            </p>
-            <p className="text-xs text-ink-muted font-mono truncate">
-              {claims.username ?? "—"} · {claims.appRole ?? "—"}
-            </p>
+          <Link to="/" className="flex items-center gap-3">
+            <Logo variant="mark" size={36} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink-primary leading-tight">
+                Timekeeping
+              </p>
+              <p className="text-xs text-ink-muted font-mono truncate">
+                {claims.username ?? "—"} · {claims.appRole ?? "—"}
+              </p>
+            </div>
           </Link>
         </div>
 

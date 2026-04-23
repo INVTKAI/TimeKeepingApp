@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { Logo } from "@/components/Logo";
 
 type Form = { email: string };
 
@@ -46,11 +47,14 @@ export function ResetPassword() {
         className="invenio-card w-full max-w-sm flex flex-col gap-4"
         noValidate
       >
-        <div>
-          <h1 className="text-xl font-semibold">Reset password</h1>
-          <p className="text-sm text-ink-muted mt-1">
-            We'll send a reset link to your email.
-          </p>
+        <div className="flex flex-col items-center gap-3 pb-2 border-b border-border">
+          <Logo variant="lockup" size={40} />
+          <div className="text-center">
+            <h1 className="text-xl font-semibold">Reset password</h1>
+            <p className="text-sm text-ink-muted mt-1">
+              We'll send a reset link to your email.
+            </p>
+          </div>
         </div>
 
         <div>

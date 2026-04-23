@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Invenio — industrial material tracking">
+  <defs>
+    <linearGradient id="ogBg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#0F1A2E"/>
+    </linearGradient>
+    <linearGradient id="ogMark" x1="0" y1="0" x2="160" y2="160" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+    <radialGradient id="ogGlow" cx="1000" cy="120" r="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0891B2" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#0891B2" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1200" height="630" fill="url(#ogBg)"/>
+  <rect width="1200" height="630" fill="url(#ogGlow)"/>
+
+  <!-- Blueprint-style grid, faint -->
+  <g stroke="#1A2744" stroke-width="1" opacity="0.6">
+    <path d="M0 0 V630 M120 0 V630 M240 0 V630 M360 0 V630 M480 0 V630 M600 0 V630 M720 0 V630 M840 0 V630 M960 0 V630 M1080 0 V630 M1200 0 V630"/>
+    <path d="M0 0 H1200 M0 105 H1200 M0 210 H1200 M0 315 H1200 M0 420 H1200 M0 525 H1200 M0 630 H1200"/>
+  </g>
+
+  <!-- Brand mark -->
+  <g transform="translate(96, 180)">
+    <rect width="160" height="160" rx="36" fill="url(#ogMark)"/>
+    <path d="M53 43h54v17h-18v40h18v17H53v-17h18V60H53z" fill="#0B1220"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="290" y="260" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="92" fill="#F1F5F9" letter-spacing="-2">Invenio</text>
+
+  <!-- Tagline -->
+  <text x="290" y="322" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="30" fill="#94A3B8" letter-spacing="-0.5">Industrial material tracking, under control.</text>
+
+  <!-- Feature chips -->
+  <g font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="15" letter-spacing="1.2">
+    <!-- Chip 1 -->
+    <rect x="96" y="440" width="172" height="48" rx="10" fill="rgba(34,211,238,0.14)" stroke="#22D3EE" stroke-width="1.5"/>
+    <text x="118" y="471" fill="#22D3EE">QR ASSET SCANS</text>
+
+    <!-- Chip 2 -->
+    <rect x="284" y="440" width="176" height="48" rx="10" fill="rgba(16,185,129,0.14)" stroke="#10B981" stroke-width="1.5"/>
+    <text x="306" y="471" fill="#10B981">OFFLINE-FIRST SYNC</text>
+
+    <!-- Chip 3 -->
+    <rect x="476" y="440" width="208" height="48" rx="10" fill="rgba(139,92,246,0.14)" stroke="#8B5CF6" stroke-width="1.5"/>
+    <text x="498" y="471" fill="#8B5CF6">REAL-TIME DASHBOARD</text>
+  </g>
+
+  <!-- Corner domain -->
+  <text x="1104" y="570" font-family="JetBrains Mono, monospace" font-weight="600" font-size="16" fill="#64748B" text-anchor="end">invenio.co</text>
+</svg>

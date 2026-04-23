@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Invenio adaptive icon foreground">
+  <defs>
+    <linearGradient id="appIconAdaptive" x1="220" y1="220" x2="804" y2="804" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0369A1"/>
+      <stop offset="1" stop-color="#0891B2"/>
+    </linearGradient>
+  </defs>
+  <!-- Android adaptive icon: safe zone is inner 66% (the rounded-square mask).
+       Keep mark centered in that safe zone with its own rounded-square background. -->
+  <rect x="220" y="220" width="584" height="584" rx="132" fill="url(#appIconAdaptive)"/>
+  <path d="M396 352h232v72h-77v176h77v72H396v-72h77V424h-77z" fill="#FFFFFF"/>
+</svg>

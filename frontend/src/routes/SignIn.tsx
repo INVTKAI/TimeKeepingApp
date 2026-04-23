@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { Logo } from "@/components/Logo";
 
 type SignInForm = { email: string; password: string };
 
@@ -30,11 +31,12 @@ export function SignIn() {
         className="invenio-card w-full max-w-sm flex flex-col gap-4"
         noValidate
       >
-        <div>
-          <h1 className="text-xl font-semibold text-ink-primary">Sign in</h1>
-          <p className="text-sm text-ink-muted mt-1">
-            Invenio Timekeeping
-          </p>
+        <div className="flex flex-col items-center gap-3 pb-2 border-b border-border">
+          <Logo variant="lockup" size={40} />
+          <div className="text-center">
+            <h1 className="text-xl font-semibold text-ink-primary">Sign in</h1>
+            <p className="text-sm text-ink-muted mt-1">Timekeeping</p>
+          </div>
         </div>
 
         <div>
