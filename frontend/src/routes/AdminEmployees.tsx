@@ -37,6 +37,7 @@ export function AdminEmployees() {
   const { data: subs } = useSubcontractors();
 
   const [search, setSearch] = useState("");
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [banner, setBanner] = useState<
@@ -65,14 +66,16 @@ export function AdminEmployees() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return data ?? [];
-    return (data ?? []).filter((e) => {
+    let rows = data ?? [];
+    if (!includeInactive) rows = rows.filter((e) => e.active);
+    if (!q) return rows;
+    return rows.filter((e) => {
       const full = `${e.first_name} ${e.last_name} ${e.external_id ?? ""} ${
         e.craft ?? ""
       }`.toLowerCase();
       return full.includes(q);
     });
-  }, [data, search]);
+  }, [data, search, includeInactive]);
 
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["admin_employees"] });
@@ -90,12 +93,22 @@ export function AdminEmployees() {
       />
       {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
 
-      <input
-        className="invenio-input max-w-sm"
-        placeholder="Search by name, external_id, or craft…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      <div className="flex gap-3 items-center flex-wrap">
+        <input
+          className="invenio-input max-w-sm"
+          placeholder="Search by name, external_id, or craft…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includeInactive}
+            onChange={(e) => setIncludeInactive(e.target.checked)}
+          />
+          <span>Include inactive</span>
+        </label>
+      </div>
 
       {isLoading && <p className="text-ink-muted">Loading…</p>}
       {error && <Banner kind="error">{String(error)}</Banner>}
@@ -399,6 +412,15 @@ function EditEmployeeModal({
       const nowIso = new Date().toISOString();
       const subChanged = values.subcontractor_id !== employee.subcontractor_id;
 
+      // Guard the §6.2 "exactly one open span" invariant — if the user fires
+      // save before the sub-history query returns, we'd miss the close step
+      // and leave two open spans. Ask them to wait a tick.
+      if (subChanged && !history) {
+        throw new Error(
+          "Still loading sub-history — try Save again in a moment.",
+        );
+      }
+
       const { error: updErr } = await supabase
         .from("employees")
         .update({
@@ -445,11 +467,11 @@ function EditEmployeeModal({
     onError,
   });
 
-  const deactivate = useMutation({
+  const toggleActive = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
         .from("employees")
-        .update({ active: false })
+        .update({ active: !employee.active })
         .eq("id", employee.id);
       if (error) throw error;
     },
@@ -553,20 +575,24 @@ function EditEmployeeModal({
         <div className="flex gap-2 justify-between pt-2 border-t border-border">
           <button
             type="button"
-            className="invenio-btn-danger"
+            className={employee.active ? "invenio-btn-danger" : "invenio-btn-secondary"}
             onClick={() => {
+              const nextActive = !employee.active;
+              const verb = nextActive ? "Reactivate" : "Deactivate";
+              const tail = nextActive
+                ? "They will reappear in crew pickers."
+                : "They will stop appearing in crew pickers.";
               if (
-                employee.active &&
                 confirm(
-                  `Deactivate ${employee.first_name} ${employee.last_name}? They will stop appearing in crew pickers.`,
+                  `${verb} ${employee.first_name} ${employee.last_name}? ${tail}`,
                 )
               ) {
-                deactivate.mutate();
+                toggleActive.mutate();
               }
             }}
-            disabled={!employee.active || deactivate.isPending}
+            disabled={toggleActive.isPending}
           >
-            {employee.active ? "Deactivate" : "Inactive"}
+            {employee.active ? "Deactivate" : "Reactivate"}
           </button>
           <div className="flex gap-2">
             <button

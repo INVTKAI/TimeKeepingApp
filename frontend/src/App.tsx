@@ -24,6 +24,8 @@ import { AdminBadges } from "@/routes/AdminBadges";
 import { AdminTimesheets } from "@/routes/AdminTimesheets";
 import { AdminImports } from "@/routes/AdminImports";
 import { WeeklyCheck } from "@/routes/WeeklyCheck";
+import { NotFound } from "@/routes/NotFound";
+import { TenantSettings } from "@/routes/TenantSettings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -181,6 +183,14 @@ export function App() {
               }
             />
             <Route
+              path="/admin/settings"
+              element={
+                <RequireAuth role="admin">
+                  <TenantSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/exports"
               element={
                 <RequireAuth role="admin">
@@ -193,7 +203,14 @@ export function App() {
             <Route path="/users" element={<Navigate to="/admin/users" replace />} />
             <Route path="/timesheets" element={<Navigate to="/my-timesheets" replace />} />
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route
+              path="*"
+              element={
+                <RequireAuth>
+                  <NotFound />
+                </RequireAuth>
+              }
+            />
           </Routes>
           </BrowserRouter>
         </AuthProvider>

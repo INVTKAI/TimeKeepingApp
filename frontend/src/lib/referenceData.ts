@@ -28,6 +28,7 @@ export type Subcontractor = {
 };
 export type Employee = {
   id: string;
+  external_id: string | null;
   first_name: string;
   last_name: string;
   type: "field" | "staff";
@@ -101,7 +102,7 @@ export function useEmployees() {
     queryFn: () =>
       fetchAll<Employee>(
         "employees",
-        "id, first_name, last_name, type, craft, active, subcontractor_id",
+        "id, external_id, first_name, last_name, type, craft, active, subcontractor_id",
       ),
     staleTime: STALE,
   });

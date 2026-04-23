@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -14,6 +14,8 @@ import {
 } from "@/lib/problem";
 import { Modal } from "@/components/Modal";
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { StatTile } from "@/components/StatTile";
+import { mondayOf, addDays } from "@/lib/referenceData";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -58,6 +60,54 @@ export function Dashboard() {
     },
     refetchInterval: 30_000,
   });
+
+  // Tenant-wide counters for stat tiles. Cheap — timesheets table has a
+  // tenant_idx + status_idx so each of these is a sub-millisecond count.
+  const weekMon = mondayOf(new Date().toISOString().slice(0, 10));
+  const weekSun = addDays(weekMon, 6);
+
+  const { data: tsCounts } = useQuery<{
+    submittedThisWeek: number;
+    approvedThisWeek: number;
+    openField: number;
+    draftNotSubmitted: number;
+  }>({
+    queryKey: ["dashboard_ts_counts", weekMon],
+    queryFn: async () => {
+      const [submittedThisWeek, approvedThisWeek, openField, draftNotSubmitted] =
+        await Promise.all([
+          supabase
+            .from("timesheets")
+            .select("id", { count: "exact", head: true })
+            .in("status", ["submitted", "in_review"])
+            .gte("period_start", weekMon)
+            .lte("period_start", weekSun),
+          supabase
+            .from("timesheets")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "approved")
+            .gte("period_start", weekMon)
+            .lte("period_start", weekSun),
+          supabase
+            .from("timesheets")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "open"),
+          supabase
+            .from("timesheets")
+            .select("id", { count: "exact", head: true })
+            .eq("status", "draft"),
+        ]);
+      return {
+        submittedThisWeek: submittedThisWeek.count ?? 0,
+        approvedThisWeek: approvedThisWeek.count ?? 0,
+        openField: openField.count ?? 0,
+        draftNotSubmitted: draftNotSubmitted.count ?? 0,
+      };
+    },
+    refetchInterval: 60_000,
+  });
+
+  const pendingCount = useMemo(() => data?.length ?? 0, [data]);
 
   const approve = useApproveRun();
   const reject = useRejectRun();
@@ -124,6 +174,36 @@ export function Dashboard() {
         subtitle={`tenant ${claims.tenantId?.slice(0, 8) ?? "—"}`}
       />
       {banner && <Banner kind={banner.kind}>{banner.text}</Banner>}
+
+      <div className="flex flex-wrap gap-3">
+        <StatTile
+          label="Pending approvals"
+          value={pendingCount}
+          hint="Waiting on you"
+          tone={pendingCount > 0 ? "warn" : "neutral"}
+        />
+        <StatTile
+          label="Submitted this week"
+          value={tsCounts?.submittedThisWeek ?? "—"}
+          hint={`${weekMon} → ${weekSun}`}
+          tone="brand"
+        />
+        <StatTile
+          label="Approved this week"
+          value={tsCounts?.approvedThisWeek ?? "—"}
+          tone="success"
+        />
+        <StatTile
+          label="Open field shells"
+          value={tsCounts?.openField ?? "—"}
+          hint="Unclaimed"
+        />
+        <StatTile
+          label="Draft (not submitted)"
+          value={tsCounts?.draftNotSubmitted ?? "—"}
+        />
+      </div>
+
       <section>
           <h2 className="text-h2 font-semibold mb-4">My pending approvals</h2>
 

@@ -37,10 +37,11 @@ type TimesheetRow = {
 };
 
 export function MyTimesheets() {
-  const { user } = useAuth();
+  const { user, claims } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const userId = user?.id ?? null;
+  const tenantId = claims.tenantId;
   const { data: me } = useMyPublicUser();
   const { data: projects } = useProjects();
   const { data: subs } = useSubcontractors();
@@ -76,11 +77,13 @@ export function MyTimesheets() {
           "Your user has no employee_id set — only users linked to an employee can submit staff timesheets.",
         );
       }
+      if (!tenantId) throw new Error("No tenant in session");
       const weekEnd = new Date(input.weekStart + "T00:00:00");
       weekEnd.setDate(weekEnd.getDate() + 6);
       const { data, error } = await supabase
         .from("timesheets")
         .insert({
+          tenant_id: tenantId,
           kind: "staff",
           status: "draft",
           submitter_user_id: userId,

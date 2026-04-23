@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
 import {
   useProjects,
   useSubcontractors,
@@ -27,6 +28,8 @@ type CreatedRow = {
 export function NewFieldTimesheet() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { claims } = useAuth();
+  const tenantId = claims.tenantId;
 
   const projects = useProjects();
   const subs = useSubcontractors();
@@ -45,6 +48,7 @@ export function NewFieldTimesheet() {
 
   const create = useMutation({
     mutationFn: async () => {
+      if (!tenantId) throw new Error("No tenant in session");
       if (!projectId || !subId) throw new Error("Pick a project and sub first.");
       if (startDate > endDate) throw new Error("End date must be on or after start date.");
 
@@ -61,6 +65,7 @@ export function NewFieldTimesheet() {
       }
 
       const rowsToInsert = days.map((date) => ({
+        tenant_id: tenantId,
         kind: "field",
         status: "open",
         submitter_user_id: null,

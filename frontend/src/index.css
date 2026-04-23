@@ -117,7 +117,13 @@
   }
 
   .invenio-sidebar {
-    @apply w-60 shrink-0 border-r border-border bg-surface sticky top-0 h-screen flex flex-col;
+    /* Desktop (md+): sticky side column. Mobile: off-canvas drawer that
+       slides in via the is-open modifier. */
+    @apply fixed md:sticky top-0 z-40 md:z-auto h-screen w-60 shrink-0 border-r border-border bg-surface flex flex-col
+           -translate-x-full md:translate-x-0 transition-transform duration-standard ease-invenio-standard;
+  }
+  .invenio-sidebar.is-open {
+    @apply translate-x-0 shadow-lg;
   }
   .invenio-sidebar-section {
     @apply px-3 pt-2 pb-1 text-xs uppercase tracking-wide font-semibold text-ink-subtle;

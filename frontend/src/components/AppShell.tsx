@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -17,6 +17,9 @@ import {
   LogOut,
   Moon,
   Sun,
+  Settings,
+  Menu,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
@@ -37,7 +40,25 @@ type NavSection = {
 export function AppShell({ children }: { children: ReactNode }) {
   const { claims, signOut } = useAuth();
   const { effective, toggle } = useTheme();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const location = useLocation();
   const isAdmin = claims.appRole === "admin";
+
+  // Auto-close the drawer on any route change (not just clicks on the sidebar
+  // itself — covers back/forward nav and in-page Links too).
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  // Body scroll lock when drawer is open on mobile.
+  useEffect(() => {
+    if (drawerOpen) {
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = "";
+      };
+    }
+  }, [drawerOpen]);
 
   const sections = useMemo<NavSection[]>(
     () => [
@@ -130,6 +151,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             icon: <Upload size={18} aria-hidden />,
             visible: isAdmin,
           },
+          {
+            to: "/admin/settings",
+            label: "Tenant Settings",
+            icon: <Settings size={18} aria-hidden />,
+            visible: isAdmin,
+          },
         ],
       },
       {
@@ -149,8 +176,36 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-canvas">
-      <aside className="invenio-sidebar">
-        <div className="px-4 py-4 border-b border-border">
+      {/* Mobile top bar (hidden on md+) */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-20 bg-surface border-b border-border px-3 py-2 flex items-center justify-between">
+        <button
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation"
+          className="invenio-sidebar-item !px-2"
+        >
+          <Menu size={20} aria-hidden />
+        </button>
+        <Link to="/" className="flex items-center gap-2">
+          <Logo variant="mark" size={28} />
+          <span className="text-sm font-semibold">Timekeeping</span>
+        </Link>
+        <div className="w-9" aria-hidden />
+      </header>
+
+      {/* Overlay behind drawer on mobile */}
+      {drawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/50"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      <aside
+        className={`invenio-sidebar ${drawerOpen ? "is-open" : ""}`}
+        aria-hidden={!drawerOpen && typeof window !== "undefined" && window.innerWidth < 768}
+      >
+        <div className="px-4 py-4 border-b border-border flex items-center justify-between gap-2">
           <Link to="/" className="flex items-center gap-3">
             <Logo variant="mark" size={36} />
             <div className="min-w-0">
@@ -162,6 +217,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
             </div>
           </Link>
+          <button
+            onClick={() => setDrawerOpen(false)}
+            aria-label="Close navigation"
+            className="md:hidden invenio-sidebar-item !px-2"
+          >
+            <X size={18} aria-hidden />
+          </button>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-4">
@@ -209,7 +271,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-x-hidden">{children}</main>
+      <main className="flex-1 min-w-0 overflow-x-hidden pt-12 md:pt-0">{children}</main>
     </div>
   );
 }
