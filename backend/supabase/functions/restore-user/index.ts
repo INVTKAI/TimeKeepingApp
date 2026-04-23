@@ -1,10 +1,12 @@
 // restore-user — spec §4.6. Reverses a revoke: lifts the Supabase ban,
-// issues a fresh recovery link (forces new password before next login),
-// and flips public.users.status from 'revoked' back to 'pending'.
+// sends the restored user a password-reset email (forces new password
+// before next login), and flips public.users.status from 'revoked' back
+// to 'pending'.
 //
 // Body: { user_id }
 
 import "@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { withAdminContext } from "../_shared/with-admin-context.ts";
 import { Problems, problemResponse } from "../_shared/problem.ts";
 import {
@@ -40,15 +42,28 @@ Deno.serve(
     });
     if (unbanErr) return problemResponse(Problems.SupabaseAuthError(unbanErr.message));
 
-    // 2. Fresh recovery link (per spec: a new password is required before the
-    //    restored user can log in).
-    const { data: linkData, error: linkErr } = await ctx.adminClient.auth.admin.generateLink({
-      type: "recovery",
-      email: target.user.email,
+    // 2. Send the user a password-reset email via the same flow as /reset-password.
+    //    Using an anon-key client because resetPasswordForEmail is a public
+    //    method that dispatches through Supabase's configured SMTP; calling it
+    //    with service-role can suppress email delivery in some configs.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const anonClient = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     });
-    if (linkErr || !linkData.properties?.action_link) {
+
+    const redirectBase = Deno.env.get("INVITE_REDIRECT_BASE");
+    const redirectTo = redirectBase
+      ? `${redirectBase.replace(/\/$/, "")}/accept-invite`
+      : undefined;
+
+    const { error: resetErr } = await anonClient.auth.resetPasswordForEmail(
+      target.user.email,
+      redirectTo ? { redirectTo } : undefined,
+    );
+    if (resetErr) {
       return problemResponse(
-        Problems.SupabaseAuthError(linkErr?.message ?? "recovery link generation failed"),
+        Problems.SupabaseAuthError(`password-reset email failed: ${resetErr.message}`),
       );
     }
 
