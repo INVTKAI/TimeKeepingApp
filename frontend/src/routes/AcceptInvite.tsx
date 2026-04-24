@@ -1,22 +1,23 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { Logo } from "@/components/Logo";
 
-// Invite / recovery flow entry point. Supabase redirects the user here with
-// either a PKCE `code` in the query string (modern flow) or a recovery token
-// in the URL fragment. We exchange the code first, then prompt for a password.
-// After successful password set we call `finalize_self_activation` to flip
-// public.users.status from 'pending' → 'active' per spec §4.3.
+// Invite / recovery flow entry point. With flowType=implicit, Supabase puts
+// access_token + refresh_token in the URL hash fragment. detectSessionInUrl
+// (in lib/supabase.ts) installs the session on page load; this component
+// just waits for it to land, strips the hash so tokens don't linger in
+// history, then prompts for a password. After update we call
+// finalize_self_activation to flip public.users.status pending → active
+// per spec §4.3.
 
 type PasswordForm = { password: string; confirm: string };
 
 export function AcceptInvite() {
-  const [searchParams] = useSearchParams();
   const [exchangeState, setExchangeState] = useState<
     "idle" | "exchanging" | "ready" | "error"
-  >("idle");
+  >("exchanging");
   const [apiError, setApiError] = useState<string | null>(null);
   const [activationState, setActivationState] = useState<
     "idle" | "running" | "done" | "error"
@@ -27,27 +28,63 @@ export function AcceptInvite() {
   const password = watch("password");
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (!code) {
-      setExchangeState("ready");
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    let timeoutId: number | null = null;
+
+    // Supabase surfaces expired/invalid-link errors in the hash fragment.
+    const hash = window.location.hash;
+    if (hash.includes("error=")) {
+      const params = new URLSearchParams(hash.slice(1));
+      const raw =
+        params.get("error_description") ??
+        params.get("error") ??
+        "Invite link is invalid or expired.";
+      window.history.replaceState(null, "", window.location.pathname);
+      setApiError(decodeURIComponent(raw.replace(/\+/g, " ")));
+      setExchangeState("error");
       return;
     }
-    setExchangeState("exchanging");
-    supabase.auth
-      .exchangeCodeForSession(code)
-      .then(({ error }) => {
-        if (error) {
-          setExchangeState("error");
-          setApiError(error.message);
-        } else {
-          setExchangeState("ready");
-        }
-      })
-      .catch((err) => {
-        setExchangeState("error");
-        setApiError(err instanceof Error ? err.message : String(err));
+
+    const sessionReady = () => {
+      if (cancelled) return;
+      // Strip tokens out of the URL so they don't sit in browser history.
+      if (window.location.hash) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+      setExchangeState("ready");
+    };
+
+    // detectSessionInUrl runs async on client init. Check first; if not yet
+    // installed, wait for the auth-state event, and bail with an error after
+    // a short timeout so a stale/reused link doesn't hang the page forever.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (session) {
+        sessionReady();
+        return;
+      }
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, s) => {
+        if (s) sessionReady();
       });
-  }, [searchParams]);
+      unsubscribe = () => subscription.unsubscribe();
+      timeoutId = window.setTimeout(() => {
+        if (cancelled) return;
+        setApiError(
+          "This invite link has expired or was already used. Ask your admin to resend.",
+        );
+        setExchangeState("error");
+      }, 2500);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      unsubscribe?.();
+    };
+  }, []);
 
   const onSubmit = async (values: PasswordForm) => {
     setApiError(null);
