@@ -6,6 +6,8 @@ Living doc. Update status + dates as items land. Source of truth for "are we rea
 
 **Email domain:** `revfire.us` (DNS access confirmed user-side 2026-04-22). Supabase Auth emails from `noreply@revfire.us`; tenant notification default from-address same until per-tenant override.
 
+**Last refresh:** 2026-05-05.
+
 Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 ---
@@ -27,6 +29,8 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | 3b  | DNS records for `revfire.us` email (SPF / DKIM / DMARC)  | ✅     | Invenio | `revfire.us` was already a verified Resend domain on the user's account — no new DNS records required |
 | 3c  | `RESEND_API_KEY` set in prod EF env                            | ✅     | Claude  | Set 2026-04-22 alongside drain secret. drain-notifications now delivers real email on every cron tick |
 | 4   | Supabase Auth email templates (invite, recovery) with customer branding | ✅ | Claude  | All 6 templates (invite, recovery, confirmation, magic_link, email_change, reauthentication) synced via `supabase config push` 2026-04-22. Branded HTML at `backend/supabase/templates/*.html`. Live invite test from Dashboard Users tab arrived correctly |
+| 4a  | Auth flow: PKCE → implicit (email-link compatibility)         | ✅     | Claude  | 2026-04-24, commit `6f320e4` — flowType 'pkce' broke admin invites + cross-browser resets ("PKCE code verifier not found in storage"). Switched to implicit + rewrote AcceptInvite to read session from URL fragment + strip hash. Deployed to prod 2026-05-05 (Netlify wasn't auto-deploying — see #18). Playwright regression test in `frontend/e2e/invite-flow.spec.ts` runs in fresh browser context. |
+| 18  | Netlify ↔ GitHub auto-deploy linkage                          | ⏳     | Invenio | **Discovered 2026-05-05 broken:** Netlify site has no `repo_url` configured — every deploy since site creation has been manual `netlify deploy`. Caused commit `6f320e4` (auth fix) to sit undeployed for 11 days while users hit the bug. **Fix:** Netlify UI → site → Build & deploy → "Link site to Git" → authorize Netlify GitHub App for `INVTKAI` org → set base=`frontend`, cmd=`npm run build`, publish=`frontend/dist`, branch=`main`. CLI cannot do this — GitHub OAuth is browser-only. |
 
 ### Customer-side data
 
@@ -57,12 +61,14 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 | #   | Item                                                          | Status | Owner  | Notes                                                                                                  |
 | --- | ------------------------------------------------------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------ |
 | 11  | End-to-end smoke script (seed tenant → invite → submit → approve → drain → Mailpit verify) | ✅ | Claude | `backend/tests-integration/end-to-end.test.ts` — runs as part of the EF test suite |
-| 12  | Frontend Playwright happy-path test                           | ⏳     | Claude | Sign-in → dashboard → approve → export. 30 min setup                                                  |
+| 12  | Frontend Playwright happy-path test                           | ✅     | Claude | 16 tests across 5 specs in `frontend/e2e/` (sign-in, invite-flow regression guard, dashboard, admin-surfaces). Wired into CI 2026-05-05 (`.github/workflows/checks.yml` `e2e` job). Signed-in tests need GH secrets `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PW_ADMIN_EMAIL`, `PW_ADMIN_PASSWORD`. Unauth tests pass against prod without secrets. |
 | 13  | True multi-session P0002 concurrency test                     | ✅     | Claude | `backend/tests-integration/concurrency.test.ts` — two parallel `approve_run`; 5/5 reliable             |
-| 14  | Import dashboards (frontend UI)                               | ⏳     | Claude | File upload driving `import-localstorage` + `import-spreadsheet`                                       |
-| 15  | Monitoring / alerting                                         | ⏳     | Invenio | Alert on `notification_failures` spike, stuck `sending` rows > 15 min, drain failures                  |
+| 14  | Import dashboards (frontend UI)                               | ✅     | Claude | `/admin/imports` (411 lines) wires both `import-localstorage` + `import-spreadsheet` with file upload + JSON paste + Phase B template downloads |
+| 15  | Monitoring / alerting                                         | 🟡     | Invenio | SQL queries done at `backend/scripts/monitoring/` (4 files: cron_health, stuck_sending, notification_failures_spike, open_runs_aging) — emit `ok/WARN/ALERT/BLOCKED` status column for alert-tool matching. Alert target wiring (PagerDuty / Slack / email digest) still pending — needs decision |
 | 16  | Service-role key rotation runbook (§11.7)                     | ✅     | Claude | `docs/ops/service-role-rotation-runbook.md`                                                           |
 | 17  | Backup / restore procedure doc                                | ✅     | Claude | `docs/ops/backup-restore-runbook.md`                                                                  |
+| 19  | CI gate on every PR + push to main                            | ✅     | Claude | `.github/workflows/checks.yml` — service-role lint + frontend tsc/build + pgTAP (241 assertions) + Playwright e2e. EF integration job stubbed (commented out, awaiting CI secrets plan) |
+| 20  | Pre-deploy UAT spec + prod-smoke.sh                           | ✅     | Claude | `docs/pre-deploy-uat-spec.md` (5 layers: CI / staging / prod-env / client-data / manual). `backend/scripts/prod-smoke.sh` chains 6 non-destructive checks (migration parity, PostgREST, redirect URLs, go-live gate, pg_cron health, drain auth) |
 
 ---
 
@@ -85,12 +91,18 @@ Status key: ✅ done · 🟡 in flight · ⏳ not started · 🚫 blocked
 
 ## Execution order
 
-1. ✅ Push migrations to prod (#2a) — applied 2026-04-22
-2. ✅ EF secrets set (#2e, #3c) + all 11 Edge Functions deployed
-3. 🟡 Run prod-bootstrap.sql in Dashboard SQL Editor (#2c + #2d) — enables extensions + registers schedules
-4. ⏳ Enable `custom_access_token_hook` in Dashboard (#2b.1) — without this every RPC returns P0005. Skip the password_verification one (#2b.2) — Pro tier doesn't expose it; v1.1 upgrade path
-5. ⏳ Wire Resend SMTP + DNS for revfire.us (#3a + #3b) — unlocks real invite/recovery emails
-6. ⏳ Customize Supabase email templates with branding (#4)
-7. Build #12 (Playwright), #14 (import dashboards), #15 (monitoring queries) as parallel tracks
-8. Customer data: #5 (Phase A real dump) → #6 (Phase B spreadsheets) → #7 (flow templates)
-9. #8 go-live gate — run immediately before cutover to confirm all invariants green
+All infrastructure + Claude-owned code items are ✅ as of 2026-05-05. Remaining
+gates before client cutover, in order:
+
+1. **#18 — Wire Netlify ↔ GitHub auto-deploy** (Invenio, ~5 min UI clicks).
+   Until this lands, every commit needs a manual `netlify deploy --prod`.
+2. **#5 — Phase A import** against the real `tk_*` dump from the customer.
+3. **#6a–#6g — Phase B spreadsheets** (subs, employee-subs, project-subs,
+   project-flows, silo-roles, project-roles, timekeeper-assignments).
+4. **#7 — Approval flow templates** authored per active project.
+5. **#15 — Monitoring alert target** wiring (SQL queries exist; just pick a
+   destination).
+6. **#8 — Go-live gate SQL** run immediately before cutover with the customer's
+   tenant_id. Must show all gates green.
+7. **Pre-cutover smoke:** `backend/scripts/prod-smoke.sh --tenant <uuid>` — 6
+   non-destructive checks; pass = ready to send the URL to the customer.

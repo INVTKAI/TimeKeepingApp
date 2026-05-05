@@ -1,5 +1,4 @@
 import { test as setup, expect } from "@playwright/test";
-import path from "node:path";
 
 // Signs in once and caches the session so signed-in tests can reuse it
 // via `storageState` in playwright.config.ts.
@@ -7,10 +6,12 @@ import path from "node:path";
 // Creds come from env, defaulting to the seeded admin from
 // memory/project_frontend_plan.md. Override with:
 //   PW_ADMIN_EMAIL=...  PW_ADMIN_PASSWORD=...
-const adminEmail = process.env.PW_ADMIN_EMAIL ?? "t.elliott.english@gmail.com";
-const adminPassword = process.env.PW_ADMIN_PASSWORD ?? "InvenioTest-2026!";
+const adminEmail = process.env.PW_ADMIN_EMAIL || "t.elliott.english@gmail.com";
+const adminPassword = process.env.PW_ADMIN_PASSWORD || "InvenioTest-2026!";
 
-const authFile = path.join(__dirname, ".auth/admin.json");
+// Path is relative to the project root (where Playwright runs from).
+// Matches the storageState path in playwright.config.ts.
+const authFile = "e2e/.auth/admin.json";
 
 setup("authenticate as admin", async ({ page }) => {
   await page.goto("/sign-in");

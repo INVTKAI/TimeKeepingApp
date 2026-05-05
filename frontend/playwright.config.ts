@@ -2,19 +2,19 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Pre-deploy UAT smoke — see docs/pre-deploy-uat-spec.md Layer 2.4.
 //
-// Tests run against whatever URL you hand them via PLAYWRIGHT_BASE_URL.
-// Defaults to the prod Netlify build since that's the common "did the last
-// deploy break sign-in?" check. For local development, set:
-//   PLAYWRIGHT_BASE_URL=http://localhost:5173
-// (assumes `npm run dev` is running in another terminal; no webServer
-// block here because we don't want to auto-kill a dev server you rely on.)
+// Three modes:
+//   1. CI                  — auto-starts `npm run preview` on :4173 against
+//                            the freshly built dist/, runs against that
+//   2. PLAYWRIGHT_BASE_URL — explicit override (staging, prod, local dev)
+//   3. default (local)     — prod Netlify URL; user manages their own server
 //
-// Credentials default to the known seeded admin (see memory
-// project_frontend_plan.md). Override via env for other tenants.
+// Credentials default to the seeded admin (see memory project_frontend_plan).
 
 const baseURL =
   process.env.PLAYWRIGHT_BASE_URL ??
-  "https://invenio-timekeeping.netlify.app";
+  (process.env.CI
+    ? "http://localhost:4173"
+    : "https://invenio-timekeeping.netlify.app");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -33,14 +33,40 @@ export default defineConfig({
     video: "retain-on-failure",
   },
 
+  // In CI, auto-start the preview server (built-in Playwright lifecycle —
+  // boots before tests, kills after). Locally, the user manages their own
+  // dev/preview server and we don't touch it.
+  webServer: process.env.CI
+    ? {
+        command: "npm run preview",
+        url: "http://localhost:4173",
+        timeout: 60_000,
+        reuseExistingServer: false,
+        stdout: "pipe",
+      }
+    : undefined,
+
   projects: [
+    // Unauthenticated tests (sign-in form, invite-flow error states) — no
+    // dependency on creds, runs even when admin secrets aren't configured.
+    {
+      name: "unauth",
+      testMatch: /(sign-in|invite-flow)\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: { cookies: [], origins: [] },
+      },
+    },
+    // Auth bootstrap — signs in once and caches the session.
     {
       name: "setup",
       testMatch: /.*\.setup\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
+    // Signed-in tests — depend on setup having run.
     {
-      name: "chromium",
+      name: "chromium-auth",
+      testMatch: /(dashboard|admin-surfaces)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: "e2e/.auth/admin.json",
