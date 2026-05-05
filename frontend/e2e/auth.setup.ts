@@ -29,8 +29,21 @@ setup("authenticate as admin", async ({ page }) => {
   await page.getByLabel("Password").fill(adminPassword);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  // Dashboard is the post-login landing page.
-  await expect(page).toHaveURL(/\/$/);
+  // Race the success path against an error banner so a bad-creds CI failure
+  // shows the actual message instead of a 10s URL timeout.
+  await Promise.race([
+    page.waitForURL(/\/$/, { timeout: 10_000 }),
+    page
+      .getByRole("alert")
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .then(async () => {
+        const msg = (await page.getByRole("alert").textContent()) ?? "(no text)";
+        throw new Error(
+          `Sign-in rejected for ${adminEmail}: ${msg.trim()} ` +
+            "(check PW_ADMIN_EMAIL / PW_ADMIN_PASSWORD secrets)",
+        );
+      }),
+  ]);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 
   await page.context().storageState({ path: authFile });
