@@ -16,9 +16,8 @@ import { test, expect } from "@playwright/test";
 // requirement.
 //
 // These tests run WITHOUT the shared admin auth fixture — fresh context, no
-// localStorage. That's exactly the state a new-invite recipient is in.
-
-test.use({ storageState: { cookies: [], origins: [] } });
+// localStorage (storage cleared by the `unauth` project in
+// playwright.config.ts). That's exactly the state a new-invite recipient is in.
 
 test.describe("accept-invite (fresh browser)", () => {
   test("bare /accept-invite with no token renders error, not crash", async ({ page }) => {

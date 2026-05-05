@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// Unauthenticated checks — skip the shared storage state so we start fresh.
-test.use({ storageState: { cookies: [], origins: [] } });
+// Storage state cleared by the `unauth` project config in playwright.config.ts.
 
 test.describe("sign-in page", () => {
   test("renders form fields and submit button", async ({ page }) => {

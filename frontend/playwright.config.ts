@@ -57,21 +57,27 @@ export default defineConfig({
         storageState: { cookies: [], origins: [] },
       },
     },
-    // Auth bootstrap — signs in once and caches the session.
-    {
-      name: "setup",
-      testMatch: /.*\.setup\.ts/,
-      use: { ...devices["Desktop Chrome"] },
-    },
-    // Signed-in tests — depend on setup having run.
-    {
-      name: "chromium-auth",
-      testMatch: /(dashboard|admin-surfaces)\.spec\.ts/,
-      use: {
-        ...devices["Desktop Chrome"],
-        storageState: "e2e/.auth/admin.json",
-      },
-      dependencies: ["setup"],
-    },
+    // Auth-required projects only included when PW_ADMIN_PASSWORD is set.
+    // Without it, setup would fail and red the whole suite — and there's no
+    // recovery from a missing creds value, so we exclude these projects
+    // entirely rather than skipping individual tests.
+    ...(process.env.PW_ADMIN_PASSWORD
+      ? [
+          {
+            name: "setup",
+            testMatch: /.*\.setup\.ts/,
+            use: { ...devices["Desktop Chrome"] },
+          },
+          {
+            name: "chromium-auth",
+            testMatch: /(dashboard|admin-surfaces)\.spec\.ts/,
+            use: {
+              ...devices["Desktop Chrome"],
+              storageState: "e2e/.auth/admin.json",
+            },
+            dependencies: ["setup"],
+          },
+        ]
+      : []),
   ],
 });
