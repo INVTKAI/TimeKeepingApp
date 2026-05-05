@@ -29,11 +29,12 @@ test.describe("accept-invite (fresh browser)", () => {
 
     await page.goto("/accept-invite");
 
-    // Should settle into the "invite link problem" error card within the
-    // 2.5s timeout the component sets, NOT render the password form and NOT
-    // crash the page.
+    // Should settle into the error card within the 2.5s timeout the
+    // component sets, NOT render the password form and NOT crash the page.
+    // Heading copy varies by detected action type ("Reset link problem" for
+    // recovery, otherwise "Email link problem"); we accept either.
     await expect(
-      page.getByRole("heading", { name: /invite link problem/i }),
+      page.getByRole("heading", { name: /(email|reset|invite) link problem/i }),
     ).toBeVisible({ timeout: 5_000 });
 
     // Password form should NOT be rendered.
@@ -50,17 +51,36 @@ test.describe("accept-invite (fresh browser)", () => {
     page,
   }) => {
     // Simulate Supabase redirecting to /accept-invite#error=access_denied&error_description=...
-    // for an expired invite.
+    // for an expired invite (legacy /verify-endpoint flow).
     await page.goto(
       "/accept-invite#error=access_denied&error_description=Email+link+is+invalid+or+has+expired",
     );
 
     await expect(
-      page.getByRole("heading", { name: /invite link problem/i }),
+      page.getByRole("heading", { name: /(email|invite) link problem/i }),
     ).toBeVisible();
     await expect(page.getByText(/email link is invalid or has expired/i)).toBeVisible();
 
     // URL fragment should be stripped so the error doesn't survive reload / copy-paste.
     await expect(page).not.toHaveURL(/#error=/);
+  });
+
+  test("/accept-invite?token_hash=...&type=recovery with bad hash surfaces verifyOtp error", async ({
+    page,
+  }) => {
+    // The post-2026-05-05 Outlook-resistant flow: emails link to
+    // /accept-invite?token_hash=X&type=recovery; AcceptInvite calls
+    // supabase.auth.verifyOtp({token_hash, type}). A bogus hash should
+    // produce a clear error (and "Reset link problem" copy for recovery).
+    await page.goto(
+      "/accept-invite?token_hash=not-a-real-hash-just-for-the-error-path&type=recovery",
+    );
+
+    await expect(
+      page.getByRole("heading", { name: /reset link problem/i }),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Token hash should be stripped from URL on error.
+    await expect(page).not.toHaveURL(/token_hash=/);
   });
 });

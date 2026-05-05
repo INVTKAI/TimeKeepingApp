@@ -8,7 +8,7 @@
           <h1 style="font-size:20px;margin:0 0 16px 0;color:#1E293B">You've been invited to Invenio Timekeeping</h1>
           <p style="font-size:14px;line-height:1.5;margin:0 0 16px 0">An administrator at your company has created a Timekeeping account for you.</p>
           <p style="margin:24px 0">
-            <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#0369A1;color:#FFFFFF;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;font-size:14px">Set your password &rarr;</a>
+            <a href="{{ .SiteURL }}/accept-invite?token_hash={{ .TokenHash }}&type={{ .EmailActionType }}" style="display:inline-block;background:#0369A1;color:#FFFFFF;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;font-size:14px">Set your password &rarr;</a>
           </p>
           <p style="font-size:13px;line-height:1.5;margin:0;color:#64748B">If you weren't expecting this invite, ignore this email &mdash; no account is created until you follow the link. Link expires in 24 hours.</p>
         </td>
