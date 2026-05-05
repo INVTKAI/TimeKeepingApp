@@ -1,7 +1,13 @@
 node_modules
 dist
-.env.local
-.env.*.local
+# Ignore all .env files; commit only *.example templates so contributors
+# know what to set. Real values live in:
+#   - Netlify build env (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) — used by prod deploys
+#   - GitHub Actions secrets — used by CI Playwright builds
+#   - .env.local (gitignored) — used for local dev
+.env
+.env.*
+!.env*.example
 *.log
 *.tsbuildinfo
 .DS_Store
